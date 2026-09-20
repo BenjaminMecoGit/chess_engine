@@ -1,0 +1,10 @@
+/Users/benjaminmeco/projects/chess-computer/chess_engine/target/debug/deps/crc32fast-230fd29d23d2dc10.d: /Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/lib.rs /Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/baseline.rs /Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/combine.rs /Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/specialized/mod.rs /Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/table.rs /Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/specialized/pclmulqdq.rs
+
+/Users/benjaminmeco/projects/chess-computer/chess_engine/target/debug/deps/libcrc32fast-230fd29d23d2dc10.rmeta: /Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/lib.rs /Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/baseline.rs /Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/combine.rs /Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/specialized/mod.rs /Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/table.rs /Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/specialized/pclmulqdq.rs
+
+/Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/lib.rs:
+/Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/baseline.rs:
+/Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/combine.rs:
+/Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/specialized/mod.rs:
+/Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/table.rs:
+/Users/benjaminmeco/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.1/src/specialized/pclmulqdq.rs:
