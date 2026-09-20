@@ -1,23 +1,23 @@
-const KING_PROXIMITY: f64 = 0.05;
+const KING_PROXIMITY: f64 = 0.03;
 const KING_EDGE: f64 = 0.00;
 
-const PAWN_ADVANCE: f64 = 0.05;
+const PAWN_ADVANCE: f64 = 0.04;
 
-const KNIGHT_MOVEMENT: f64 = 0.05;
-const KNIGHT_SIDE: f64 = 0.05;
+const KNIGHT_MOVEMENT: f64 = 0.03;
+const KNIGHT_SIDE: f64 = 0.04;
 
 
-const BISHOP_MOVEMENT: f64 = 0.05;
+const BISHOP_MOVEMENT: f64 = 0.03;
 const ATTACKING_BISHOP: f64 = 3.;
 
-const ROOK_MOVEMENT: f64 = 0.05;
+const ROOK_MOVEMENT: f64 = 0.03;
 const ATTACKING_ROOK: f64 = 3.;
 
 const QUEEN_MOVEMENT_DIAGONAL: f64 = 0.03;
-const ATTACKING_QUEEN_DIAGONAL: f64 = 2.;
+const ATTACKING_QUEEN_DIAGONAL: f64 = 3.;
 
 const QUEEN_MOVEMENT_STRAIGHT: f64 = 0.03;
-const ATTACKING_QUEEN_STRAIGHT: f64 = 2.;
+const ATTACKING_QUEEN_STRAIGHT: f64 = 3.;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BoardState {

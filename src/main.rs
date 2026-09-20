@@ -38,6 +38,7 @@ const COMPUTER_TIME_FRIEND: f64 = 15./1000.;
 const COMPUTER_TIME_ON_PLAYER: f64 = 15./1000.;
 const COMPUTER_TIME_ON_COMPUTER: f64 = 45./1000.;
 const MAX_VISITS: usize = 10_000_000;
+//const MIN_VISITS: usize = 1_000_000;
 
 #[macroquad::main("Rust chess")]
 async fn main() {
@@ -123,6 +124,7 @@ async fn main() {
     buttons.insert("explore mode", spawn_explore_mode_button());
     buttons.insert("main menu", spawn_go_to_main_button());
     buttons.insert("evaluation", spawn_evaluation_button());
+    buttons.insert("perspective", spawn_change_perspective_button());
     buttons.insert("white mode", spawn_white_mode_button());
     buttons.insert("black mode", spawn_black_mode_button());
     buttons.insert("random mode", spawn_random_mode_button());
@@ -141,7 +143,7 @@ async fn main() {
         // setting up the background
         clear_background(BACKGROUND_COLOR);
 
-        // some very universal button behaviors
+        // implementing button behaviors here
         if is_mouse_button_pressed(MouseButton::Left) {
             // handling actions for the buttons
             if buttons["main menu"].mouse_is_on() {
@@ -182,6 +184,21 @@ async fn main() {
                     buttons.get_mut("evaluation").expect("No evaluation button").text = "".to_string();
                 }
             }
+            else if buttons["perspective"].mouse_is_on() {
+
+                // change the perspectives
+                if perspective == Side::White {
+                    perspective = Side::Black;
+                }
+                else {
+                    perspective = Side::White;
+                }
+
+                // change the highlighting of squares
+                for i in 0..32 {
+                    (squares[i%8][i/8].highlight, squares[7-i%8][7-i/8].highlight) = (squares[7-i%8][7-i/8].highlight, squares[i%8][i/8].highlight);
+                }
+            }
 
         }
 
@@ -200,6 +217,7 @@ async fn main() {
                         }
 
                         buttons.get_mut("evaluation").expect("No evaluation button").visible = true;
+                        buttons.get_mut("perspective").expect("No perspective button").visible = true;
                         buttons.get_mut("main menu").expect("No menu button").visible = true;
 
                     }
@@ -225,6 +243,7 @@ async fn main() {
                         // set the relevant buttons
                         buttons.get_mut("main menu").expect("No menu button").visible = true;
                         buttons.get_mut("evaluation").expect("No menu button").visible = true;
+                        buttons.get_mut("perspective").expect("No perspective button").visible = true;
 
                     }
                     else if buttons["white mode"].mouse_is_on() || buttons["black mode"].mouse_is_on() || buttons["random mode"].mouse_is_on() {
@@ -257,6 +276,7 @@ async fn main() {
                         // set visible buttons
                         buttons.get_mut("evaluation").expect("No evaluation button").visible = true;
                         buttons.get_mut("evaluation").expect("No evaluation button").text = "Show evaluation".to_string();
+                        buttons.get_mut("perspective").expect("No perspective button").visible = true;
                         buttons.get_mut("main menu").expect("No menu button").visible = true;
 
                     }
@@ -379,6 +399,8 @@ async fn main() {
                 else {
 
                     // if it is the computers turn, then we first let it do some thinking
+                    
+                    
                     let starting_time = get_time();
                     while get_time() - starting_time < COMPUTER_TIME_ON_COMPUTER && analysis_tree.root.visits < MAX_VISITS {
                         analysis_tree.traverse();
@@ -397,7 +419,7 @@ async fn main() {
                             board_state.apply_move_unchecked(&suggested_move);
 
                             // update the analysis tree
-                            println!("This move was visited {} times.", analysis_tree.get_visits());
+                            //println!("This move was visited {} times.", analysis_tree.get_visits());
                             analysis_tree.make_given_move(suggested_move);
 
                             // un-highlight all squares
@@ -845,13 +867,28 @@ fn spawn_explore_mode_button() -> Button {
     }
 }
 
-fn spawn_go_to_main_button() -> Button { // todo: positioning of this button
+fn spawn_go_to_main_button() -> Button { 
     Button {
         relative_x: 0.01,
         relative_y: 0.8,
         width: 200.,
         height: 50.,
         text: String::from("Go to main menu"),
+        text_size: FONT_SIZE/2,
+        color: BUTTON_COLOR,
+        text_color: BUTTON_TEXT_COLOR,
+        visible: false,
+        shaded: false,
+    }
+}
+
+fn spawn_change_perspective_button() -> Button {
+    Button {
+        relative_x: 0.01,
+        relative_y: 0.6,
+        width: 200.,
+        height: 50.,
+        text: String::from("Change perspective"),
         text_size: FONT_SIZE/2,
         color: BUTTON_COLOR,
         text_color: BUTTON_TEXT_COLOR,
@@ -874,6 +911,8 @@ fn spawn_game_winner_button() -> Button {
         shaded: false,
     }
 }
+
+
 
 // -------------------------------------
 // the below are helper things for drawing the chess board's state
