@@ -1,11 +1,13 @@
+use std::f64::INFINITY;
+
 use crate::chess::{
     BoardState,
     Move,
     Side,
 };
 
-//const ROLLOUT_DEPTH: usize = 4;
-const C: f64 = 1.4;
+const ROLLOUT_DEPTH: usize = 1;
+const C: f64 = 0.7;
 
 pub struct AnalysisTree {
     pub root: AnalysisNode,
@@ -99,6 +101,7 @@ pub struct AnalysisNode {
 
 impl AnalysisNode {
 
+    // returns the average value from the current traversals
     pub fn get_value(&self) -> f64 {
         if self.visits == 0 {
             return 0.;
@@ -184,7 +187,7 @@ impl AnalysisNode {
 
     // the rollout, for now nothing really random, just an evaluation at face value
     pub fn rollout(&self, board_state: &BoardState) -> f64 {
-        return eval_to_mc(board_state.evaluation());
+        return eval_to_mc(minimax(board_state, ROLLOUT_DEPTH));
     }
 
     // makes one traversal down and updates the information in each node
@@ -249,74 +252,55 @@ impl AnalysisNode {
         }
 
 
-
-
-
-
-        /*
-        if self.children.len() > 0 {
-            // if the current node is not a leaf, then we go deeper
-
-            // find the index of the ucb child
-            let ucb_child_index = self.ucb_child().expect("There was no child in a non-leaf node (traverse)");
-
-            // apply their move to the board state used in tracking the position
-            board_state.apply_move_unchecked(&self.children[ucb_child_index].m);
-
-            // now go deeper in the recursion
-            let mtc_evaluation: f64 = self.children[ucb_child_index].traverse(board_state);
-            self.total_value += mtc_evaluation;
-            self.visits += 1;
-
-            return mtc_evaluation;
-        }
-        else { 
-            if self.visits > 0 {
-                // if the current node has been visited before, then it needs to be initialized:
-                self.initialize_children(board_state);
-
-                // try to find the index of the ucb child
-                if let Some(ucb_child_index) = self.ucb_child() {
-                    // apply their move to the board state used in tracking the position
-                    board_state.apply_move_unchecked(&self.children[ucb_child_index].m);
-
-                    // now go deeper in the recursion
-                    let mtc_evaluation: f64 = self.children[ucb_child_index].traverse(board_state);
-                    self.total_value += mtc_evaluation;
-                    self.visits +=1;
-
-                    return mtc_evaluation;
-                }
-                else { // if we arrive here, then we are at a terminal state, 
-                        // we return the evaluation accordingly
-                        if board_state.is_in_check(Side::White) {
-                            return -1.;
-                        }
-                        else if board_state.is_in_check(Side::Black) {
-                            return 1.;
-                        }
-                        else {
-                            return 0.;
-                        }
-
-                }
-
-                
-            }
-            else {
-                // in the case of a leaf node visited for the first time, perform a rollout, 
-                // there is no going deeper
-                let mtc_evaluation: f64 = self.rollout(board_state);
-                self.total_value += mtc_evaluation;
-                self.visits +=1;
-                
-                return mtc_evaluation;
-            }
-        }
-        */
     }
 
 }
+
+
+// a function that allows for minimax seatch using a built in evaluation function
+pub fn minimax(board_state: &BoardState, depth: usize) -> f64 {
+
+    // the base case of the recursion
+    if depth < 1 {
+        return board_state.evaluation();
+    }
+
+    // otherwise we look at all the legal moves 
+    // and find the one that gives the best evaluation by colour, recursively
+    let legal_moves = board_state.get_legal_moves();
+    
+    // check for a terminal state
+    if legal_moves.len() == 0 {
+        if board_state.is_in_check(Side::White) {
+            return -1000.;
+        }
+        else if board_state.is_in_check(Side::Black){
+            return 1000.;
+        }
+        else {
+            return 0.;
+        }
+    }
+
+    // if there are legal moves, make them
+    // and find the one that gives the highest evaluation
+    let mut winner: f64 = -INFINITY;
+    if board_state.side_to_move == Side::Black {
+        winner = INFINITY;
+    }
+
+    for m in legal_moves {
+        let mut temp_board = board_state.clone();
+        temp_board.apply_move_unchecked(&m);
+        let temp_evaluation = minimax(&temp_board, depth - 1);
+        if temp_board.side_to_move == Side::White && temp_evaluation < winner || temp_board.side_to_move == Side::Black && temp_evaluation > winner {
+            winner = temp_evaluation;
+        }
+    }
+
+    return winner;
+}
+
 
 
 const NORMALIZATION: f64 = 12.;
