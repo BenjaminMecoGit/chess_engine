@@ -179,9 +179,11 @@ async fn main() {
             else if buttons["evaluation"].mouse_is_on() {
                 if buttons["evaluation"].text != "Show evaluation" {
                     buttons.get_mut("evaluation").expect("No evaluation button").text = "Show evaluation".to_string();
+                    buttons.get_mut("evaluation").expect("No evaluation button").text_centered = true;
                 }
                 else {
                     buttons.get_mut("evaluation").expect("No evaluation button").text = "".to_string();
+                    buttons.get_mut("evaluation").expect("No evaluation button").text_centered = false;
                 }
             }
             else if buttons["perspective"].mouse_is_on() {
@@ -400,7 +402,6 @@ async fn main() {
 
                     // if it is the computers turn, then we first let it do some thinking
                     
-                    
                     let starting_time = get_time();
                     while get_time() - starting_time < COMPUTER_TIME_ON_COMPUTER && analysis_tree.root.visits < MAX_VISITS {
                         analysis_tree.traverse();
@@ -419,7 +420,7 @@ async fn main() {
                             board_state.apply_move_unchecked(&suggested_move);
 
                             // update the analysis tree
-                            //println!("This move was visited {} times.", analysis_tree.get_visits());
+                            println!("Visits: {}. Evaluation: {:.2}", analysis_tree.get_visits(), analysis_tree.root.get_value());
                             analysis_tree.make_given_move(suggested_move);
 
                             // un-highlight all squares
@@ -453,7 +454,7 @@ async fn main() {
         // showing the evaluation if it is to be shown
         if buttons["evaluation"].text != "Show evaluation".to_string() {
             if let Some(m) = analysis_tree.get_best_move() {
-                buttons.get_mut("evaluation").expect("No evaluation button").text = m.to_text();
+                buttons.get_mut("evaluation").expect("No evaluation button").text = m.to_text() + " : " + &((analysis_tree.root.get_value()*100.).round()/100.).to_string();
             }
             else {
                 buttons.get_mut("evaluation").expect("No evaluation button").text = " -- ".to_string();
@@ -688,6 +689,7 @@ struct Button {
     height: f32,
     text: String,
     text_size: u16,
+    text_centered: bool,
     color: Color,
     text_color: Color,
     visible: bool,
@@ -736,14 +738,25 @@ impl Button{
             
             // write the desired text
             let dimensions = measure_text(&self.text, None, self.text_size, 1.0);
-
-            draw_text(
-                &self.text,
-                corner_x + (self.width - dimensions.width)/2.,
-                corner_y + self.height/2. + dimensions.height/3.,
-                self.text_size as f32,
-                self.text_color,
-            );
+            if self.text_centered {
+                draw_text(
+                    &self.text,
+                    corner_x + (self.width - dimensions.width)/2.,
+                    corner_y + self.height/2. + dimensions.height/3.,
+                    self.text_size as f32,
+                    self.text_color,
+                );
+            }
+            else {
+                draw_text(
+                    &self.text,
+                    corner_x + self.width/6.,
+                    corner_y + self.height/2. + dimensions.height/3.,
+                    self.text_size as f32,
+                    self.text_color,
+                );
+            }
+            
         }
     }
 
@@ -770,6 +783,7 @@ fn spawn_friend_mode_button() -> Button {
         height: 80.,
         text: String::from("Play against a friend"),
         text_size: FONT_SIZE,
+        text_centered: true,
         color: BUTTON_COLOR,
         text_color: BUTTON_TEXT_COLOR,
         visible: false,
@@ -785,6 +799,7 @@ fn spawn_evaluation_button() -> Button {
         height: 50.,
         text: String::from(""),
         text_size: FONT_SIZE/2,
+        text_centered: true,
         color: BUTTON_COLOR,
         text_color: BUTTON_TEXT_COLOR,
         visible: false,
@@ -800,6 +815,7 @@ fn spawn_computer_mode_button() -> Button {
         height: 80.,
         text: String::from("Play against a bot"),
         text_size: FONT_SIZE,
+        text_centered: true,
         color: BUTTON_COLOR,
         text_color: BUTTON_TEXT_COLOR,
         visible: false,
@@ -815,6 +831,7 @@ fn spawn_black_mode_button() -> Button {
         height: 80.,
         text: String::from("Play as black"),
         text_size: FONT_SIZE,
+        text_centered: true,
         color: BUTTON_COLOR,
         text_color: BUTTON_TEXT_COLOR,
         visible: false,
@@ -830,6 +847,7 @@ fn spawn_random_mode_button() -> Button {
         height: 80.,
         text: String::from("Play random color"),
         text_size: FONT_SIZE,
+        text_centered: true,
         color: BUTTON_COLOR,
         text_color: BUTTON_TEXT_COLOR,
         visible: false,
@@ -845,6 +863,7 @@ fn spawn_white_mode_button() -> Button {
         height: 80.,
         text: String::from("Play as white"),
         text_size: FONT_SIZE,
+        text_centered: true,
         color: BUTTON_COLOR,
         text_color: BUTTON_TEXT_COLOR,
         visible: false,
@@ -860,6 +879,7 @@ fn spawn_explore_mode_button() -> Button {
         height: 80.,
         text: String::from("Explore and analyze"),
         text_size: FONT_SIZE,
+        text_centered: true,
         color: BUTTON_COLOR,
         text_color: BUTTON_TEXT_COLOR,
         visible: false,
@@ -875,6 +895,7 @@ fn spawn_go_to_main_button() -> Button {
         height: 50.,
         text: String::from("Go to main menu"),
         text_size: FONT_SIZE/2,
+        text_centered: true,
         color: BUTTON_COLOR,
         text_color: BUTTON_TEXT_COLOR,
         visible: false,
@@ -890,6 +911,7 @@ fn spawn_change_perspective_button() -> Button {
         height: 50.,
         text: String::from("Change perspective"),
         text_size: FONT_SIZE/2,
+        text_centered: true,
         color: BUTTON_COLOR,
         text_color: BUTTON_TEXT_COLOR,
         visible: false,
@@ -905,6 +927,7 @@ fn spawn_game_winner_button() -> Button {
         height: 100.,
         text: String::from(""),
         text_size: FONT_SIZE,
+        text_centered: true,
         color: Color::new(200.0/256.0, 200.0/256.0, 200.0/256.0, 0.6),
         text_color: Color::new(0.0/256.0, 0.0/256.0, 0.0/256.0, 1.),
         visible: false,

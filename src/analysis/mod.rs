@@ -1,4 +1,3 @@
-
 use crate::chess::{
     BoardState,
     Move,
@@ -82,10 +81,12 @@ impl AnalysisTree {
         }
     }
 
+    
     // the amount of visits in the root
     pub fn get_visits(&self) -> usize {
         return self.root.visits;
     }
+    
 }
 
 pub struct AnalysisNode {
@@ -97,6 +98,15 @@ pub struct AnalysisNode {
 }
 
 impl AnalysisNode {
+
+    pub fn get_value(&self) -> f64 {
+        if self.visits == 0 {
+            return 0.;
+        }
+        else {
+            return mc_to_eval(self.total_value/(self.visits as f64));
+        }
+    }
 
     // returns the index of the promising child so far if there is one
     pub fn get_best_move(&self) -> Option<usize> {
@@ -121,36 +131,39 @@ impl AnalysisNode {
         if self.children.is_empty() {
             return None;
         }
-        else {
 
-            // first make sure to visit all children at least once
-            if let Some(index) = self.children.iter().position(|child| child.visits == 0) {
-                return Some(index);
-            }
-
-            // otherwise, find the child with the highest ucb evaluation
-            let sign: f64 = match self.s {
-                Side::White => 1.,
-                Side::Black => -1.,
-            };
-
-            let parent_log:f64 = (self.visits as f64).ln();
-
-            let mut record: f64 = f64::NEG_INFINITY;
-            let mut winner: Option<usize> = None;
-
-            for index in 0..self.children.len() {
-                let ucb: f64 = sign*self.children[index].total_value/(self.children[index].visits as f64) + 
-                            C * (parent_log/(self.children[index].visits as f64)).sqrt();
-
-                if ucb > record {
-                    winner = Some(index);
-                    record = ucb;
-                }
-            }
-
-            return winner;
+        // first make sure to visit all children at least once
+        if let Some(index) = self.children.iter().position(|child| child.visits == 0) {
+            return Some(index);
         }
+
+        // otherwise, find the child with the highest ucb evaluation
+        let sign: f64 = match self.s {
+            Side::White => 1.,
+            Side::Black => -1.,
+        };
+
+        let parent_log:f64 = (self.visits as f64).max(1.).ln();
+
+        self.children
+            .iter()
+            .enumerate()
+            .map(|(index, child)| {
+                let child_visits = child.visits as f64;
+                let exploitation = sign * child.total_value / child_visits;
+                let exploration = C * (parent_log/child_visits).sqrt();
+                
+                let ucb = exploitation + exploration;
+
+                (index, ucb)
+            })
+            .max_by(|(_, left), (_, right)| {
+                left.total_cmp(right)
+            })
+            .map(|(index, _)| {
+                index
+            })  
+
     }
 
     // initializes the children of a node
@@ -213,11 +226,7 @@ impl AnalysisNode {
                     // and if this is not a terminal state, 
                     // then at this point there are children in the node, 
                     // so we can continue the recursion:
-                    
-                    let result: f64 = self.traverse(board_state);
-                    self.total_value += result;
-                    self.visits += 1;
-                    return result;
+                    return self.traverse(board_state);
                 }
 
             }
@@ -309,7 +318,13 @@ impl AnalysisNode {
 
 }
 
+
+const NORMALIZATION: f64 = 12.;
 // returns a value normalizes between -1 and 1, given an evaluation
 fn eval_to_mc(evaluation: f64) -> f64 {
-    return -1. + 2./(1. + (-evaluation/8.).exp());
+    return -1. + 2./(1. + (-evaluation/NORMALIZATION).exp());
+} 
+
+fn mc_to_eval(mc: f64) -> f64 {
+    return -(2./(1. + mc) - 1.).ln()*NORMALIZATION;
 } 
