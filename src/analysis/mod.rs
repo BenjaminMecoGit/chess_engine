@@ -6,8 +6,10 @@ use crate::chess::{
     Side,
 };
 
+const CONFIDENCE_WEIGHT: f64 = 10_000.;
+const MAX_CONFIDENCE: f64 = 0.4;
 const ROLLOUT_DEPTH: usize = 1;
-const C: f64 = 0.7;
+const C: f64 = 1.3;
 
 pub struct AnalysisTree {
     pub root: AnalysisNode,
@@ -23,6 +25,7 @@ impl AnalysisTree {
             children: Vec::<AnalysisNode>::new(),
             visits: 0, 
             total_value: 0., 
+            minimax_value: None,
             m: Move::Standard(-1,-1), 
             s: Side::White 
         };
@@ -61,6 +64,7 @@ impl AnalysisTree {
             self.root = AnalysisNode { children: Vec::<AnalysisNode>::new(), 
                                         visits: 0, 
                                         total_value: 0., 
+                                        minimax_value: None,
                                         m: m,
                                         s: self.board_state_backup.side_to_move,
                                     };
@@ -95,6 +99,7 @@ pub struct AnalysisNode {
     pub children: Vec<AnalysisNode>,
     pub visits: usize,
     pub total_value: f64,
+    pub minimax_value: Option<f64>,
     pub m: Move, // the move that led here
     pub s: Side, // the side whose turn it is now
 }
@@ -109,6 +114,16 @@ impl AnalysisNode {
         else {
             return mc_to_eval(self.total_value/(self.visits as f64));
         }
+    }
+
+    // returns the combined evaluation from the minimax search and the MC mean
+    pub fn combined_value(&self) -> f64 {
+        let mean = self.get_value();
+        let minimax = self.minimax_value.unwrap_or(mean);
+
+        let confidence = MAX_CONFIDENCE * self.visits as f64 / (self.visits as f64 + CONFIDENCE_WEIGHT);
+
+        return confidence * minimax + (1. - confidence) * mean;
     }
 
     // returns the index of the promising child so far if there is one
@@ -153,7 +168,7 @@ impl AnalysisNode {
             .enumerate()
             .map(|(index, child)| {
                 let child_visits = child.visits as f64;
-                let exploitation = sign * child.total_value / child_visits;
+                let exploitation = sign * child.combined_value();
                 let exploration = C * (parent_log/child_visits).sqrt();
                 
                 let ucb = exploitation + exploration;
@@ -170,7 +185,7 @@ impl AnalysisNode {
     }
 
     // initializes the children of a node
-    pub fn initialize_children(&mut self, board_state: &BoardState) {
+    pub fn initialize_children(&mut self, board_state: &mut BoardState) {
         let legal_moves = board_state.get_legal_moves();
 
         self.children = Vec::<AnalysisNode>::new();
@@ -178,7 +193,9 @@ impl AnalysisNode {
         for m in legal_moves {
             self.children.push(
                 AnalysisNode { children: Vec::<AnalysisNode>::new(), 
-                               visits: 0, total_value: 0., 
+                               visits: 0, 
+                               total_value: 0., 
+                               minimax_value: None,
                                m: m,
                                s: self.s.opposite(),
             });
@@ -186,8 +203,8 @@ impl AnalysisNode {
     }  
 
     // the rollout, for now nothing really random, just an evaluation at face value
-    pub fn rollout(&self, board_state: &BoardState) -> f64 {
-        return eval_to_mc(minimax(board_state, ROLLOUT_DEPTH));
+    pub fn rollout(&self, board_state: &mut BoardState) -> f64 {
+        return eval_to_mc(minimax(board_state, ROLLOUT_DEPTH, -INFINITY,INFINITY));
     }
 
     // makes one traversal down and updates the information in each node
@@ -200,6 +217,7 @@ impl AnalysisNode {
                 self.visits += 1;
                 let rollout_result: f64 = self.rollout(board_state);
                 self.total_value += rollout_result;
+                self.minimax_value = Some(rollout_result);
                 return rollout_result;
             }
             else {
@@ -247,6 +265,8 @@ impl AnalysisNode {
             // having the result, we are ready to back propagate:
             self.visits += 1;
             self.total_value += result;
+            self.update_minimax_value();
+
             return result;
 
         }
@@ -254,51 +274,112 @@ impl AnalysisNode {
 
     }
 
+    fn update_minimax_value(&mut self) {
+        let child_values = self
+            .children
+            .iter()
+            .filter_map(|child| {
+                child.minimax_value
+            });
+
+        self.minimax_value = match self.s {
+            Side::White => {
+                child_values.max_by(f64::total_cmp)
+            }
+
+            Side::Black => {
+                child_values.min_by(f64::total_cmp)
+            }
+        };
+    }
+
 }
 
 
-// a function that allows for minimax seatch using a built in evaluation function
-pub fn minimax(board_state: &BoardState, depth: usize) -> f64 {
+// a simple alpha - beta pruning way of doing minimax
+pub fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut beta: f64) -> f64 {
 
-    // the base case of the recursion
-    if depth < 1 {
-        return board_state.evaluation();
-    }
+    // first check for a terminal state
+    let mut legal_moves = board_state.get_legal_moves();
 
-    // otherwise we look at all the legal moves 
-    // and find the one that gives the best evaluation by colour, recursively
-    let legal_moves = board_state.get_legal_moves();
-    
-    // check for a terminal state
     if legal_moves.len() == 0 {
-        if board_state.is_in_check(Side::White) {
-            return -1000.;
-        }
-        else if board_state.is_in_check(Side::Black){
-            return 1000.;
+        if board_state.is_in_check(board_state.side_to_move) {
+            return match board_state.side_to_move {
+                Side::White => -10_000. - depth as f64,
+                Side::Black => 10_000. + depth as f64,
+            };
         }
         else {
             return 0.;
         }
     }
 
-    // if there are legal moves, make them
-    // and find the one that gives the highest evaluation
-    let mut winner: f64 = -INFINITY;
-    if board_state.side_to_move == Side::Black {
-        winner = INFINITY;
+    // next we check if we have reached the recursion bottom
+    if depth == 0 {
+        return board_state.evaluation();
     }
 
-    for m in legal_moves {
-        let mut temp_board = board_state.clone();
-        temp_board.apply_move_unchecked(&m);
-        let temp_evaluation = minimax(&temp_board, depth - 1);
-        if temp_board.side_to_move == Side::White && temp_evaluation < winner || temp_board.side_to_move == Side::Black && temp_evaluation > winner {
-            winner = temp_evaluation;
+    // if we are at a maximizing node (white to move) 
+    if board_state.side_to_move == Side::White {
+
+        // because we are a maximizing player now
+        let mut value = -INFINITY;
+
+        // then make each legal move one by one
+        legal_moves.sort_by(|m1, m2| board_state.priority(m2).total_cmp(&board_state.priority(m1)));
+
+        for m in legal_moves {
+            //let mut temp_board = board_state.clone();
+            //temp_board.apply_move_unchecked(&m);
+            let un_move = board_state.apply_move_unchecked(&m);
+
+            // check if we beat value
+            value = value.max(minimax(board_state, depth - 1, alpha, beta));
+
+            // unmake the move before anything else 
+
+            let restored = board_state.un_move_unchecked(un_move);
+
+            debug_assert!(restored,"Failed to restore board during minimax");
+        
+            if value >= beta {
+                // in this case, we have evidence that we already know the optimal value
+                break;
+            }
+
+            alpha = alpha.max(value);
         }
+        return value;
+    }
+    else {
+
+        // because we are a minimizing player now
+        let mut value = INFINITY;
+
+        // then make each legal move one by one
+        legal_moves.sort_by(|m1, m2| board_state.priority(m2).total_cmp(&board_state.priority(m1)));
+
+        for m in legal_moves {
+            //let mut temp_board = board_state.clone();
+            //temp_board.apply_move_unchecked(&m);
+            let un_move = board_state.apply_move_unchecked(&m);
+
+            // check if we beat value
+            value = value.min(minimax(board_state, depth - 1, alpha, beta));
+
+            // unmake the move before anything else 
+            board_state.un_move_unchecked(un_move);
+
+            if value <= alpha {
+                // in this case, we have evidence that we already know the optimal value
+                break;
+            }
+
+            beta = beta.min(value);
+        }
+        return value;
     }
 
-    return winner;
 }
 
 

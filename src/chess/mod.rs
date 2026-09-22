@@ -1,3 +1,5 @@
+use std::f64::INFINITY;
+
 mod evaluation;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -17,8 +19,36 @@ impl BoardState {
     // this will attempt to make a suggested move
     // if illegal, nothing will happen and false is returned
     // if the move is legal, it is implemented and true is returned
-    pub fn apply_move_unchecked(&mut self, m: &Move) {
+    pub fn apply_move_unchecked(&mut self, m: &Move) -> UnMove {
 
+        // before making the move, we record the current state
+
+        let captured_piece: Option<Piece> = match m {
+            Move::Standard(_, to)|Move::Promotion(_, to, _) => {
+                if self.is_piece_at(*to) {
+                    self.pieces.iter().find(|piece| piece.square == *to).cloned()
+                }
+                else {
+                    None
+                }
+            },
+            Move::Castle(_,_) => None,
+            Move::EnPassant(from,to) => {
+                self.pieces.iter().find(|piece| piece.square == (*from / 8) * 8 + *to % 8).cloned()
+            }
+        };  
+
+        let res = UnMove{
+            movement: m.clone(),
+            previous_side_to_move: self.side_to_move,
+            capture: captured_piece,
+            white_short_castle: self.white_short_castle,
+            white_long_castle: self.white_long_castle,
+            black_short_castle: self.black_short_castle,
+            black_long_castle: self.black_long_castle,
+            en_passant: self.en_passant,
+        };
+        
         match m {
             Move::Standard(from, to) => {
 
@@ -151,16 +181,12 @@ impl BoardState {
                 self.en_passant = None;
 
                 // remove any captured pieces and the promoting pawn
-                self.pieces.retain(|piece| piece.square != *from && piece.square != *to);
+                self.pieces.retain(|piece| piece.square != *to);
 
-                // add a piece of the kind that is promoted to
-                self.pieces.push(
-                    Piece {
-                        side: self.side_to_move.clone(), 
-                        kind: kind.clone(),
-                        square: to.clone(),
-                    }
-                );
+                // move and promote the pawn
+                let pawn= self.pieces.iter_mut().find(|piece| piece.square == *from).expect("There was no pawn to promote");
+                pawn.square = *to;
+                pawn.kind = *kind;
             },
             Move::EnPassant(from, to) => {
 
@@ -190,15 +216,18 @@ impl BoardState {
 
         self.side_to_move = self.side_to_move.opposite();
 
+        // finally give the unmove
+        return res;
+
     }
 
     // says if a given move is legal or not
-    pub fn is_legal_move(&self, m: &Move) -> bool {
+    pub fn is_legal_move(&mut self, m: &Move) -> bool {
         return self.get_legal_moves().contains(m);
     }
 
     // returns all the legal moves in the current BoardState
-    pub fn get_legal_moves(&self) -> Vec<Move> {
+    pub fn get_legal_moves(&mut self) -> Vec<Move> {
         let mut res: Vec<Move> = Vec::<Move>::new();
 
         for piece in &self.pieces {
@@ -573,10 +602,12 @@ impl BoardState {
 
         // only retain those moves that do not end up leaving the moving side in check
         res.retain(|chess_move| {
-            let mut resulting_state = self.clone();
-            resulting_state.apply_move_unchecked(chess_move);
 
-            !resulting_state.is_in_check(self.side_to_move)
+            let un_move = self.apply_move_unchecked(chess_move);
+            let is_illegal = self.is_in_check(self.side_to_move.opposite());
+            self.un_move_unchecked(un_move);
+
+            !is_illegal
         });
 
         return res;
@@ -783,6 +814,183 @@ impl BoardState {
         return false;
     }
 
+    // returns a priority value for a move, saying how urgently 
+    // one should look at it in the analysis
+    pub fn priority(&self, m: &Move) -> f64 {
+
+        let mut res: f64 = 0.;
+
+        // if a capture, this can only be of an opposing colour anyway
+        if let Some(kind) = self.kind_at(m.get_to()) {
+            res += 10. * match kind {
+                PieceKind::King => INFINITY,
+                PieceKind::Queen => 9.,
+                PieceKind::Rook => 5.,
+                PieceKind::Bishop => 3.,
+                PieceKind::Knight => 3.,
+                PieceKind::Pawn => 1.,
+            };
+        }
+
+        if let Some(kind) = self.kind_at(m.get_from()) {
+            res -= match kind {
+                PieceKind::King => 10.,
+                PieceKind::Queen => 9.,
+                PieceKind::Rook => 5.,
+                PieceKind::Bishop => 3.,
+                PieceKind::Knight => 3.,
+                PieceKind::Pawn => 1.,
+            };
+        } 
+
+        return res;
+    }
+
+    // this unmakes a move, given an un-move
+    // returns true if successful 
+    pub fn un_move_unchecked(&mut self, um: UnMove) -> bool {
+
+        // implement the un-move on piece placement, 
+        // with controls for consistency
+
+        if um.previous_side_to_move.opposite() == self.side_to_move {
+
+            match um.movement {
+                Move::Standard(from,to) => {
+
+                    // get index of the appropriate pieces
+                    let to_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == to);
+                    let from_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == from);
+
+                    if let (Some(index), None) = (to_index, from_index) {
+                        if self.pieces[index].side == self.side_to_move.opposite() {
+                            // if all is well, move the piece back
+                            self.pieces[index].square = from;
+                            // restore any captured piece if there was one
+                            if let Some(captured_piece) = um.capture {
+                                self.pieces.push(captured_piece);
+                            } 
+                        }
+                        else {
+                            return false;
+                        }
+                    }
+                    else {
+                        return false;
+                    }
+                },
+                Move::Castle(from,to) => {
+
+                    // a castle cannot capture:
+                    if let Some(_) = um.capture {
+                        return false;
+                    }
+
+                    // check for a king and rook in place
+                    let king_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == to);
+                    let rook_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == (to + from)/2);
+
+                    if let (Some(k), Some(r)) = (king_index, rook_index) {
+                        if 
+                            self.pieces[k].kind == PieceKind::King && 
+                            self.pieces[k].side == self.side_to_move.opposite() && 
+                            !self.is_piece_at(from) &&
+                            self.pieces[r].kind == PieceKind::Rook && 
+                            self.pieces[r].side == self.side_to_move.opposite() && 
+                            !self.is_piece_at(to + (to - from).signum()*(1 + (7 - to%8)/4))
+                        {
+                            self.pieces[k].square = from;
+                            self.pieces[r].square = to + (to - from).signum()*(1 + (7 - to%8)/4);
+                        }
+                        else {
+                            return false;
+                        }
+                    }
+                    else {
+                        return false;
+                    }
+                },
+                Move::EnPassant(from,to) => {
+
+                    if let Some(captured_piece) = um.capture {
+                        // an en passant must always capture a pawn
+                        if captured_piece.kind == PieceKind::Pawn {
+                            // control for correct pieces in the correct squares
+                            let capture_square = (from / 8) * 8 + to % 8;
+                                
+                            let pawn_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == to);
+                            let capture_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == capture_square);
+                            let empty_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == from);
+
+                            if let (Some(index), None, None) = (pawn_index, empty_index, capture_index) {
+                                if self.pieces[index].kind == PieceKind::Pawn {
+                                    // if all is well, move one pawn back
+                                    self.pieces[index].square = from;
+                                    // and add the captured pawn again
+                                    self.pieces.push(captured_piece);
+                                }
+                                else {
+                                    return false;
+                                }
+                            }
+                            else {
+                                return false;
+                            }
+                        }
+                        else {
+                            return false;
+                        }
+                    }
+                    else {
+                        return false;
+                    }
+                },
+                Move::Promotion(from,to, kind) => {
+                    // a promotion must always happen on the final ranks
+                    if to/8 == 7 || to/8 == 0 {
+                        // control for the correct pieces in the correct squares
+                        let pawn_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == to);
+                        let empty_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == from);
+
+                        if let (Some(index), None) = (pawn_index, empty_index) {
+                            if self.pieces[index].kind == kind {
+                                // if all is in place, then we un-promote
+                                self.pieces[index].kind = PieceKind::Pawn;
+                                // we move the pawn back
+                                self.pieces[index].square = from;
+                                // and we give back any captured piece
+                                if let Some(captured_piece) = um.capture {
+                                    self.pieces.push(captured_piece);
+                                }
+                            }
+                            else {
+                                return false;
+                            }
+                        }
+                        else {
+                            return false;
+                        }
+                    }
+                    else {
+                        return false;
+                    }
+                },
+            }
+
+            // recall the surrounding information
+            self.side_to_move = um.previous_side_to_move;
+            self.white_short_castle = um.white_short_castle;
+            self.white_long_castle = um.white_long_castle;
+            self.black_short_castle = um.black_short_castle;
+            self.black_long_castle = um.black_long_castle;
+            self.en_passant = um.en_passant;
+
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
 }
 
 // for converting coordinates into moves
@@ -843,6 +1051,17 @@ impl BoardState {
             }
             return false;
         }
+    }
+
+    pub fn kind_at(&self, square: i8) -> Option<PieceKind> {
+
+        for p in &self.pieces {
+            if p.square == square {
+                return Some(p.kind)
+            }
+        }
+
+        return None;
     }
 
     pub fn is_kind_at(&self, square: i8, kind: PieceKind) -> bool {
@@ -915,7 +1134,7 @@ impl BoardState {
 
 // the Move enum 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Move {
+pub enum Move { // this contains from, to, and then optional data
     Standard(i8,i8),
     Castle(i8,i8),
     EnPassant(i8,i8),
@@ -965,6 +1184,21 @@ impl Move {
     }
 
 }
+
+// saves the data that is necessary to revert to the previous state
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct UnMove {
+    pub movement: Move,
+    pub previous_side_to_move: Side,
+    pub capture: Option<Piece>,
+    pub white_short_castle: bool,
+    pub white_long_castle: bool,
+    pub black_short_castle: bool,
+    pub black_long_castle: bool,
+    pub en_passant: Option<(i8,i8)>,
+}
+
+
 
 // the Piece structure, for now rather simple
 #[derive(Clone, Debug, Eq, PartialEq)]

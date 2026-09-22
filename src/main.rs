@@ -107,6 +107,7 @@ async fn main() {
             children: Vec::<AnalysisNode>::new(),
             visits: 0,
             total_value: 0.,
+            minimax_value: None,
             m: Move::Standard(-1,-1), // the move that led here, the one for the root does not matter
             s: Side::White, // the side whose turn it is now
         },

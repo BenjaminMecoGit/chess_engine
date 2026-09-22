@@ -6,9 +6,9 @@ use crate::chess::{
     Side,
 };
 
-const INFLUENCE_EXPONENT: f64 = 1.0;
+const INFLUENCE_EXPONENT: f64 = 1.05;
 const INFLUENCE_COEFF: f64 = 0.01;
-const CENTER_PROXIMITY: f64 = 0.15;
+const CENTER_PROXIMITY: f64 = 0.25;
 
 const KING_PROXIMITY: f64 = 0.05;
 const KING_EDGE: f64 = 0.05;
@@ -27,11 +27,11 @@ const BISHOP_ATTACK: f64 =  1.0;
 const ROOK_CONTROL: f64 = 1.0;
 const ROOK_ATTACK: f64 =  1.0;
 
-const QUEEN_CONTROL_DIAGONAL: f64 = 0.6;
-const QUEEN_ATTACK_DIAGONAL: f64 =  0.6;
+const QUEEN_CONTROL_DIAGONAL: f64 = 0.2;
+const QUEEN_ATTACK_DIAGONAL: f64 =  0.2;
 
-const QUEEN_CONTROL_STRAIGHT: f64 = 0.6;
-const QUEEN_ATTACK_STRAIGHT: f64 =  0.6;
+const QUEEN_CONTROL_STRAIGHT: f64 = 0.2;
+const QUEEN_ATTACK_STRAIGHT: f64 =  0.2;
 
 
 // methods for evaluating a position at face value
@@ -383,7 +383,7 @@ impl BoardState {
             c *= 1. + endgame_weight * KING_PROXIMITY / (1. + opposing_king_distance);
 
             // control matters more in the center when there are more pieces on the board
-            let centralization_weight: f64 = (1. - endgame_weight) * (3.5 - ((i%8) as f64 - 3.5).abs() + 3.5 - ((i/8) as f64 - 3.5).abs()).sqrt();
+            let centralization_weight: f64 = (1. - endgame_weight) * (((i%8) as f64 - 3.5).abs() + ((i/8) as f64 - 3.5).abs()).sqrt();
             c *= 1. + CENTER_PROXIMITY*centralization_weight;
 
             res += control_to_eval(c);
