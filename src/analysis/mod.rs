@@ -8,7 +8,7 @@ use crate::chess::{
 
 const CONFIDENCE_WEIGHT: f64 = 10_000.;
 const MAX_CONFIDENCE: f64 = 0.4;
-const ROLLOUT_DEPTH: usize = 1;
+const ROLLOUT_DEPTH: usize = 2;
 const C: f64 = 1.3;
 
 pub struct AnalysisTree {

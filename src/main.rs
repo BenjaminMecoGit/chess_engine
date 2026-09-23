@@ -90,7 +90,7 @@ async fn main() {
     }
     
     // the initial board state
-    let mut board_state: BoardState = BoardState{pieces: Vec::<Piece>::new(), 
+    let mut board_state: BoardState = BoardState{piece_arr: [None; 64], 
                                                  side_to_move: Side::White,
                                                  white_short_castle: true,
                                                  white_long_castle: true,
@@ -98,6 +98,16 @@ async fn main() {
                                                  black_long_castle: true,
                                                  en_passant: None,
                                                 };
+    
+    /*
+    board_state = kiwipete();
+
+    for i in 0..6 {
+        println!("Number of legal moves at depth {}: {}", i, perft(&mut board_state, i))
+    }
+    */
+    
+
     board_state.to_starting_position();
 
 
@@ -483,29 +493,32 @@ async fn main() {
     }
 }
 
-/*
+
 // Testing for legality
-fn perft(board: &BoardState, depth: usize,) -> u64 {
+fn perft(board: &mut BoardState, depth: u32) -> u64 {
     if depth == 0 {
         return 1;
     }
 
-    let moves: Vec<Move> = board.get_legal_moves();
+    let legal_moves = board.get_legal_moves();
     let mut nodes = 0;
 
-    for chess_move in moves {
-        let mut next_board = board.clone();
-        next_board.apply_move_unchecked(&chess_move);
+    for chess_move in legal_moves {
+        let unmove = board.apply_move_unchecked(&chess_move);
 
-        nodes += perft(&next_board,depth - 1,);
+        nodes += perft(board, depth - 1);
+        assert!(
+            board.un_move_unchecked(unmove),
+            "Failed to unmake move: {:?}",
+            chess_move
+        );
     }
-
-    return nodes;
+    nodes
 }
 
 fn kiwipete() -> BoardState {
     let mut res: BoardState = BoardState {
-        pieces: Vec::<Piece>::new(),
+        piece_arr: [None; 64],
         side_to_move: Side::White,
         white_short_castle: true,
         white_long_castle: true,
@@ -515,45 +528,45 @@ fn kiwipete() -> BoardState {
     };
 
     // pieces for white
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Pawn, square: 48});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Pawn, square: 49});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Pawn, square: 50});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Pawn, square: 27});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Pawn, square: 36});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Pawn, square: 53});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Pawn, square: 54});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Pawn, square: 55});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Knight, square: 42});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Knight, square: 28});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Bishop, square: 51});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Bishop, square: 52});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Rook, square: 56});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Rook, square: 63});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::Queen, square: 45});
-    res.pieces.push(Piece{side: Side::White, kind: PieceKind::King, square: 60});
+    res.piece_arr[48] = Some(Piece{side: Side::White, kind: PieceKind::Pawn});
+    res.piece_arr[49] = Some(Piece{side: Side::White, kind: PieceKind::Pawn});
+    res.piece_arr[50] = Some(Piece{side: Side::White, kind: PieceKind::Pawn});
+    res.piece_arr[27] = Some(Piece{side: Side::White, kind: PieceKind::Pawn});
+    res.piece_arr[36] = Some(Piece{side: Side::White, kind: PieceKind::Pawn});
+    res.piece_arr[53] = Some(Piece{side: Side::White, kind: PieceKind::Pawn});
+    res.piece_arr[54] = Some(Piece{side: Side::White, kind: PieceKind::Pawn});
+    res.piece_arr[55] = Some(Piece{side: Side::White, kind: PieceKind::Pawn});
+    res.piece_arr[42] = Some(Piece{side: Side::White, kind: PieceKind::Knight});
+    res.piece_arr[28] = Some(Piece{side: Side::White, kind: PieceKind::Knight});
+    res.piece_arr[51] = Some(Piece{side: Side::White, kind: PieceKind::Bishop});
+    res.piece_arr[52] = Some(Piece{side: Side::White, kind: PieceKind::Bishop});
+    res.piece_arr[56] = Some(Piece{side: Side::White, kind: PieceKind::Rook});
+    res.piece_arr[63] = Some(Piece{side: Side::White, kind: PieceKind::Rook});
+    res.piece_arr[45] = Some(Piece{side: Side::White, kind: PieceKind::Queen});
+    res.piece_arr[60] = Some(Piece{side: Side::White, kind: PieceKind::King});
 
     // pieces for black
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Pawn, square: 8});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Pawn, square: 33});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Pawn, square: 10});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Pawn, square: 11});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Pawn, square: 20});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Pawn, square: 13});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Pawn, square: 22});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Pawn, square: 47});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Knight, square: 17});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Knight, square: 21});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Bishop, square: 16});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Bishop, square: 14});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Rook, square: 0});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Rook, square: 7});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::Queen, square: 12});
-    res.pieces.push(Piece{side: Side::Black, kind: PieceKind::King, square: 4});
+    res.piece_arr[8] = Some(Piece{side: Side::Black, kind: PieceKind::Pawn});
+    res.piece_arr[33] = Some(Piece{side: Side::Black, kind: PieceKind::Pawn});
+    res.piece_arr[10] = Some(Piece{side: Side::Black, kind: PieceKind::Pawn});
+    res.piece_arr[11] = Some(Piece{side: Side::Black, kind: PieceKind::Pawn});
+    res.piece_arr[20] = Some(Piece{side: Side::Black, kind: PieceKind::Pawn});
+    res.piece_arr[13] = Some(Piece{side: Side::Black, kind: PieceKind::Pawn});
+    res.piece_arr[22] = Some(Piece{side: Side::Black, kind: PieceKind::Pawn});
+    res.piece_arr[47] = Some(Piece{side: Side::Black, kind: PieceKind::Pawn});
+    res.piece_arr[17] = Some(Piece{side: Side::Black, kind: PieceKind::Knight});
+    res.piece_arr[21] = Some(Piece{side: Side::Black, kind: PieceKind::Knight});
+    res.piece_arr[16] = Some(Piece{side: Side::Black, kind: PieceKind::Bishop});
+    res.piece_arr[14] = Some(Piece{side: Side::Black, kind: PieceKind::Bishop});
+    res.piece_arr[0] = Some(Piece{side: Side::Black, kind: PieceKind::Rook});
+    res.piece_arr[7] = Some(Piece{side: Side::Black, kind: PieceKind::Rook});
+    res.piece_arr[12] = Some(Piece{side: Side::Black, kind: PieceKind::Queen});
+    res.piece_arr[4] = Some(Piece{side: Side::Black, kind: PieceKind::King});
 
     return res
 }
 
-*/
+
 
 // Drawing on the screen
 
@@ -595,25 +608,26 @@ fn draw_chess_board(
 
     // draw all the pieces, with respect to perspective
     
-    for piece in &board_state.pieces {
+    for i in 0..64 {
+        if let Some(piece) = board_state.piece_arr[i] {
+            let sq = i as i8;
+            let mut p_x: f32 = (sq%8) as f32;
+            let mut p_y: f32 = (sq/8) as f32;
 
-        let mut p_x: f32 = (piece.square%8) as f32;
-        let mut p_y: f32 = (piece.square/8) as f32;
+            if *perspective == Side::Black {
+                p_x = 7. - p_x;
+                p_y = 7. - p_y;
+            }
 
-        if *perspective == Side::Black {
-            p_x = 7. - p_x;
-            p_y = 7. - p_y;
+            draw_texture_ex(texture(&piece, 
+                                    piece_textures), 
+                                    offset_x + p_x * SQUARE_SIZE, offset_y + p_y * SQUARE_SIZE, 
+                                    WHITE,
+                                    DrawTextureParams{
+                                        dest_size: Some(vec2(PIECE_SIZE, PIECE_SIZE)),
+                                        ..Default::default()
+                                    });
         }
-
-
-        draw_texture_ex(texture(&piece, 
-                                piece_textures), 
-                                offset_x + p_x * SQUARE_SIZE, offset_y + p_y * SQUARE_SIZE, 
-                                WHITE,
-                                DrawTextureParams{
-                                    dest_size: Some(vec2(PIECE_SIZE, PIECE_SIZE)),
-                                    ..Default::default()
-                                });
     }
 }
 

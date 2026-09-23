@@ -2,9 +2,10 @@ use std::f64::INFINITY;
 
 mod evaluation;
 
+// the board state in a game of chess [FIXED]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BoardState {
-    pub pieces: Vec<Piece>,
+    pub piece_arr: [Option<Piece>;64],
     pub side_to_move: Side,
     pub white_short_castle: bool,
     pub white_long_castle: bool,
@@ -13,20 +14,21 @@ pub struct BoardState {
     pub en_passant: Option<(i8,i8)>,
 }
 
-// methods for making and getting legal moves on the board
+// methods for making and getting legal moves on the board [FIXED]
 impl BoardState { 
 
-    // this will attempt to make a suggested move
-    // if illegal, nothing will happen and false is returned
-    // if the move is legal, it is implemented and true is returned
+    // Applies a move without checking for legality. 
+    // The caller must guarantee that a move is indeed legal before calling
+    // Returns the information needed to retur to the previous board state
+    // [FIXED]
     pub fn apply_move_unchecked(&mut self, m: &Move) -> UnMove {
 
         // before making the move, we record the current state
 
         let captured_piece: Option<Piece> = match m {
             Move::Standard(_, to)|Move::Promotion(_, to, _) => {
-                if self.is_piece_at(*to) {
-                    self.pieces.iter().find(|piece| piece.square == *to).cloned()
+                if let Some(p) = self.piece_arr[*to as usize] {
+                    Some(p.clone())
                 }
                 else {
                     None
@@ -34,7 +36,7 @@ impl BoardState {
             },
             Move::Castle(_,_) => None,
             Move::EnPassant(from,to) => {
-                self.pieces.iter().find(|piece| piece.square == (*from / 8) * 8 + *to % 8).cloned()
+                self.piece_arr[((*from / 8) * 8 + *to % 8) as usize].clone()
             }
         };  
 
@@ -106,16 +108,10 @@ impl BoardState {
                 else {
                     self.en_passant = None;
                 }
-
-                // remove any captured pieces
-                self.pieces.retain(|piece| piece.square != *to);
                 
-                // move the piece on "from" to "to"
-                for j in 0..self.pieces.len(){
-                    if self.pieces[j].square == *from {
-                        self.pieces[j].square = *to;
-                    }
-                }
+                // move the piece on "from" to "to", this removes the captured piece automatically
+                self.piece_arr[*to as usize] = self.piece_arr[*from as usize];
+                self.piece_arr[*from as usize] = None;
 
             },
             Move::Castle(from, to) => {
@@ -135,17 +131,18 @@ impl BoardState {
                 // en passant is now not valid
                 self.en_passant = None;
 
-                // move the king and the rook
-                for j in 0..self.pieces.len(){
-                    if self.pieces[j].square == *from {
-                        self.pieces[j].square = *to;
-                    }
-                    if *to > *from && self.pieces[j].square == *from + 3 {
-                        self.pieces[j].square = from + 1;
-                    }
-                    if *to < *from && self.pieces[j].square == *from - 4 {
-                        self.pieces[j].square = *from - 1;
-                    }
+                // move the king
+                self.piece_arr[*to as usize] = self.piece_arr[*from as usize];
+                self.piece_arr[*from as usize] = None;
+                
+                // move the rook
+                if *to > *from {
+                    self.piece_arr[(*to - 1) as usize] = self.piece_arr[(*to + 1) as usize];
+                    self.piece_arr[(*to + 1) as usize] = None;
+                }
+                else {
+                    self.piece_arr[(*to + 1) as usize] = self.piece_arr[(*to - 2) as usize];
+                    self.piece_arr[(*to - 2) as usize] = None;
                 }
 
             },
@@ -180,13 +177,12 @@ impl BoardState {
                 // en passant is now not valid
                 self.en_passant = None;
 
-                // remove any captured pieces and the promoting pawn
-                self.pieces.retain(|piece| piece.square != *to);
+                // move the pawn and capture any piece there in the process
+                self.piece_arr[*to as usize] = self.piece_arr[*from as usize];
+                self.piece_arr[*from as usize] = None;
 
-                // move and promote the pawn
-                let pawn= self.pieces.iter_mut().find(|piece| piece.square == *from).expect("There was no pawn to promote");
-                pawn.square = *to;
-                pawn.kind = *kind;
+                // promote the pawn
+                self.piece_arr[*to as usize].as_mut().expect("There is no pawn to promote!").kind = *kind;
             },
             Move::EnPassant(from, to) => {
 
@@ -196,21 +192,18 @@ impl BoardState {
                 // en passant is now not valid
                 self.en_passant = None;
 
-                // remove any captured pieces, 
+                // remove any captured pawn
                 // note that en passant captures behind the moving pawn
                 if self.side_to_move == Side::White {
-                    self.pieces.retain(|piece| piece.square != *to + 8);
+                    self.piece_arr[(*to + 8) as usize] = None;
                 }
                 else {
-                    self.pieces.retain(|piece| piece.square != *to - 8);
+                    self.piece_arr[(*to - 8) as usize] = None;
                 }
 
                 // move the pawn on "from" to "to"
-                for j in 0..self.pieces.len(){
-                    if self.pieces[j].square == *from {
-                        self.pieces[j].square = *to;
-                    }
-                }   
+                self.piece_arr[*to as usize] = self.piece_arr[*from as usize];
+                self.piece_arr[*from as usize] = None; 
             }
         }
 
@@ -221,381 +214,384 @@ impl BoardState {
 
     }
 
-    // says if a given move is legal or not
+    // says if a given move is legal or not 
+    // [FIXED, but we should not have this in the analysis at any point]
     pub fn is_legal_move(&mut self, m: &Move) -> bool {
         return self.get_legal_moves().contains(m);
     }
 
-    // returns all the legal moves in the current BoardState
+    // returns all the legal moves in the current BoardState [FIXED, but can be optimized quite a lot]
     pub fn get_legal_moves(&mut self) -> Vec<Move> {
         let mut res: Vec<Move> = Vec::<Move>::new();
 
-        for piece in &self.pieces {
-            if piece.side == self.side_to_move {
+        for i in 0..64 {
+            if let Some(piece) = self.piece_arr[i] {
+                if piece.side == self.side_to_move {
                 
-                let from: i8 = piece.square;
-                match piece.kind {
-                    
-                    PieceKind::King => {
-                        // the moves on the immediate squares
-                        if from % 8 > 0 && from/8 > 0 && !self.is_side_at(from - 9, self.side_to_move) {
-                            res.push(Move::Standard(from,from - 9));
-                        }
-                        if from/8 > 0 && !self.is_side_at(from - 8, self.side_to_move) {
-                            res.push(Move::Standard(from,from - 8));
-                        }
-                        if from % 8 < 7 && from/8 > 0 && !self.is_side_at(from - 7, self.side_to_move) {
-                            res.push(Move::Standard(from,from - 7));
-                        }
-                        if from % 8 < 7 && !self.is_side_at(from + 1, self.side_to_move) {
-                            res.push(Move::Standard(from,from + 1));
-                        }
-                        if from % 8 < 7 && from/8 < 7 && !self.is_side_at(from + 9, self.side_to_move) {
-                            res.push(Move::Standard(from,from + 9));
-                        }
-                        if from/8 < 7 && !self.is_side_at(from + 8, self.side_to_move) {
-                            res.push(Move::Standard(from,from + 8));
-                        }
-                        if from % 8 > 0 && from/8 < 7 && !self.is_side_at(from + 7, self.side_to_move) {
-                            res.push(Move::Standard(from,from + 7));
-                        }
-                        if from % 8 > 0 && !self.is_side_at(from - 1, self.side_to_move) {
-                            res.push(Move::Standard(from,from - 1));
-                        }
-
-                        // castling 
-                        if self.side_to_move == Side::White {
-
-                            // short
-                            if self.white_short_castle && 
-                               self.is_kind_at(60, PieceKind::King) && self.is_side_at(60, Side::White) &&
-                               self.is_kind_at(63, PieceKind::Rook) && self.is_side_at(63, Side::White) &&
-                               !self.is_piece_at(61) && !self.is_piece_at(62) &&
-                               !self.is_attacked(60, self.side_to_move.opposite()) && 
-                               !self.is_attacked(61, self.side_to_move.opposite()) &&
-                               !self.is_attacked(62, self.side_to_move.opposite())
-                            {
-                                res.push(Move::Castle(60,62));
+                    let sq = i as i8;
+                    match piece.kind {
+                        
+                        PieceKind::King => {
+                            // the moves on the immediate squares
+                            if sq % 8 > 0 && sq/8 > 0 && !self.is_side_at(sq - 9, self.side_to_move) {
+                                res.push(Move::Standard(sq,sq - 9));
+                            }
+                            if sq/8 > 0 && !self.is_side_at(sq - 8, self.side_to_move) {
+                                res.push(Move::Standard(sq,sq - 8));
+                            }
+                            if sq % 8 < 7 && sq/8 > 0 && !self.is_side_at(sq - 7, self.side_to_move) {
+                                res.push(Move::Standard(sq,sq - 7));
+                            }
+                            if sq % 8 < 7 && !self.is_side_at(sq + 1, self.side_to_move) {
+                                res.push(Move::Standard(sq,sq + 1));
+                            }
+                            if sq % 8 < 7 && sq/8 < 7 && !self.is_side_at(sq + 9, self.side_to_move) {
+                                res.push(Move::Standard(sq,sq + 9));
+                            }
+                            if sq/8 < 7 && !self.is_side_at(sq + 8, self.side_to_move) {
+                                res.push(Move::Standard(sq,sq + 8));
+                            }
+                            if sq % 8 > 0 && sq/8 < 7 && !self.is_side_at(sq + 7, self.side_to_move) {
+                                res.push(Move::Standard(sq,sq + 7));
+                            }
+                            if sq % 8 > 0 && !self.is_side_at(sq - 1, self.side_to_move) {
+                                res.push(Move::Standard(sq,sq - 1));
                             }
 
-                            // long
-                            if self.white_long_castle && 
-                               self.is_kind_at(60, PieceKind::King) && self.is_side_at(60, Side::White) &&
-                               self.is_kind_at(56, PieceKind::Rook) && self.is_side_at(56, Side::White) &&
-                               !self.is_piece_at(57) && !self.is_piece_at(58) && !self.is_piece_at(59) &&
-                               !self.is_attacked(60, self.side_to_move.opposite()) && 
-                               !self.is_attacked(59, self.side_to_move.opposite()) &&
-                               !self.is_attacked(58, self.side_to_move.opposite())
-                            {
-                                res.push(Move::Castle(60,58));
+                            // castling 
+                            if self.side_to_move == Side::White {
+
+                                // short
+                                if self.white_short_castle && 
+                                self.is_kind_at(60, PieceKind::King) && self.is_side_at(60, Side::White) &&
+                                self.is_kind_at(63, PieceKind::Rook) && self.is_side_at(63, Side::White) &&
+                                !self.is_piece_at(61) && !self.is_piece_at(62) &&
+                                !self.is_attacked(60, self.side_to_move.opposite()) && 
+                                !self.is_attacked(61, self.side_to_move.opposite()) &&
+                                !self.is_attacked(62, self.side_to_move.opposite())
+                                {
+                                    res.push(Move::Castle(60,62));
+                                }
+
+                                // long
+                                if self.white_long_castle && 
+                                self.is_kind_at(60, PieceKind::King) && self.is_side_at(60, Side::White) &&
+                                self.is_kind_at(56, PieceKind::Rook) && self.is_side_at(56, Side::White) &&
+                                !self.is_piece_at(57) && !self.is_piece_at(58) && !self.is_piece_at(59) &&
+                                !self.is_attacked(60, self.side_to_move.opposite()) && 
+                                !self.is_attacked(59, self.side_to_move.opposite()) &&
+                                !self.is_attacked(58, self.side_to_move.opposite())
+                                {
+                                    res.push(Move::Castle(60,58));
+                                }
                             }
-                        }
-                        else {
-                            // short
-                            if self.black_short_castle && 
-                               self.is_kind_at(4, PieceKind::King) && self.is_side_at(4, Side::Black) &&
-                               self.is_kind_at(7, PieceKind::Rook) && self.is_side_at(7, Side::Black) &&
-                               !self.is_piece_at(5) && !self.is_piece_at(6) &&
-                               !self.is_attacked(4, self.side_to_move.opposite()) && 
-                               !self.is_attacked(5, self.side_to_move.opposite()) &&
-                               !self.is_attacked(6, self.side_to_move.opposite())
-                            {
-                                res.push(Move::Castle(4,6));
+                            else {
+                                // short
+                                if self.black_short_castle && 
+                                self.is_kind_at(4, PieceKind::King) && self.is_side_at(4, Side::Black) &&
+                                self.is_kind_at(7, PieceKind::Rook) && self.is_side_at(7, Side::Black) &&
+                                !self.is_piece_at(5) && !self.is_piece_at(6) &&
+                                !self.is_attacked(4, self.side_to_move.opposite()) && 
+                                !self.is_attacked(5, self.side_to_move.opposite()) &&
+                                !self.is_attacked(6, self.side_to_move.opposite())
+                                {
+                                    res.push(Move::Castle(4,6));
+                                }
+
+                                // long
+                                if self.black_long_castle && 
+                                self.is_kind_at(4, PieceKind::King) && self.is_side_at(4, Side::Black) &&
+                                self.is_kind_at(0, PieceKind::Rook) && self.is_side_at(0, Side::Black) &&
+                                !self.is_piece_at(1) && !self.is_piece_at(2) && !self.is_piece_at(3) &&
+                                !self.is_attacked(4, self.side_to_move.opposite()) && 
+                                !self.is_attacked(3, self.side_to_move.opposite()) &&
+                                !self.is_attacked(2, self.side_to_move.opposite())
+                                {
+                                    res.push(Move::Castle(4,2));
+                                }
                             }
 
-                            // long
-                            if self.black_long_castle && 
-                               self.is_kind_at(4, PieceKind::King) && self.is_side_at(4, Side::Black) &&
-                               self.is_kind_at(0, PieceKind::Rook) && self.is_side_at(0, Side::Black) &&
-                               !self.is_piece_at(1) && !self.is_piece_at(2) && !self.is_piece_at(3) &&
-                               !self.is_attacked(4, self.side_to_move.opposite()) && 
-                               !self.is_attacked(3, self.side_to_move.opposite()) &&
-                               !self.is_attacked(2, self.side_to_move.opposite())
-                            {
-                                res.push(Move::Castle(4,2));
-                            }
-                        }
 
+                        }, 
+                        PieceKind::Queen => {
 
-                    }, 
-                    PieceKind::Queen => {
+                            // this piece can move on files and ranks until there is a collision
+                            let directions: [i8; 4] = [-1,1,8,-8];
 
-                        // this piece can move on files and ranks until there is a collision
-                        let directions: [i8; 4] = [-1,1,8,-8];
-
-                        for d in directions {
-                            let mut pos :i8 = from;
-                            loop { 
-                                pos += d;
-                                if (pos/8 != from/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
-                                    break;
-                                }
-                                else if self.is_piece_at(pos) {
-                                    if !self.is_side_at(pos, self.side_to_move) {
-                                        res.push(Move::Standard(from, pos));
-                                    }
-                                    break;
-                                }
-                                res.push(Move::Standard(from,pos));
-                            }
-                        }
-
-                        // and also on diagonals until there is a collision
-                        let directions: [i8; 4] = [-9,-7,7,9];
-
-                        for d in directions {
-                            let mut pos :i8 = from;
-                            loop { 
-                                if d == -9 && (pos < 8 || pos%8 == 0) {
-                                    break;
-                                }
-                                else if d == -7 && (pos < 8 || pos%8 == 7) {
-                                    break;
-                                }
-                                else if d == 9 && (pos > 55 || pos%8 == 7) {
-                                    break;
-                                }
-                                else if d == 7 && (pos > 55 || pos%8 == 0) {
-                                    break;
-                                }
-                                else {
+                            for d in directions {
+                                let mut pos :i8 = sq;
+                                loop { 
                                     pos += d;
-                                }
-
-                                if self.is_piece_at(pos) {
-                                    if !self.is_side_at(pos, self.side_to_move) {
-                                        res.push(Move::Standard(from, pos));
+                                    if (pos/8 != sq/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
+                                        break;
                                     }
-                                    break;
-                                }
-                                res.push(Move::Standard(from,pos));
-                            }
-                        }
-                        
-                    }, 
-                    PieceKind::Rook => {
-                        // this piece can move on files and ranks until there is a collision
-                        let directions: [i8; 4] = [-1,1,8,-8];
-
-                        for d in directions {
-                            let mut pos :i8 = from;
-                            loop { 
-                                pos += d;
-                                if (pos/8 != from/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
-                                    break;
-                                }
-                                else if self.is_piece_at(pos) {
-                                    if !self.is_side_at(pos, self.side_to_move) {
-                                        res.push(Move::Standard(from, pos));
+                                    else if self.is_piece_at(pos) {
+                                        if !self.is_side_at(pos, self.side_to_move) {
+                                            res.push(Move::Standard(sq, pos));
+                                        }
+                                        break;
                                     }
-                                    break;
+                                    res.push(Move::Standard(sq,pos));
                                 }
-                                res.push(Move::Standard(from,pos));
                             }
-                        }
-                    }, 
-                    PieceKind::Bishop => {
-                        // this piece can move on diagonals until there is a collision
-                        let directions: [i8; 4] = [-9,-7,7,9];
 
-                        for d in directions {
-                            let mut pos :i8 = from;
-                            loop { 
-                                if d == -9 && (pos < 8 || pos%8 == 0) {
-                                    break;
+                            // and also on diagonals until there is a collision
+                            let directions: [i8; 4] = [-9,-7,7,9];
+
+                            for d in directions {
+                                let mut pos :i8 = sq;
+                                loop { 
+                                    if d == -9 && (pos < 8 || pos%8 == 0) {
+                                        break;
+                                    }
+                                    else if d == -7 && (pos < 8 || pos%8 == 7) {
+                                        break;
+                                    }
+                                    else if d == 9 && (pos > 55 || pos%8 == 7) {
+                                        break;
+                                    }
+                                    else if d == 7 && (pos > 55 || pos%8 == 0) {
+                                        break;
+                                    }
+                                    else {
+                                        pos += d;
+                                    }
+
+                                    if self.is_piece_at(pos) {
+                                        if !self.is_side_at(pos, self.side_to_move) {
+                                            res.push(Move::Standard(sq, pos));
+                                        }
+                                        break;
+                                    }
+                                    res.push(Move::Standard(sq,pos));
                                 }
-                                else if d == -7 && (pos < 8 || pos%8 == 7) {
-                                    break;
-                                }
-                                else if d == 9 && (pos > 55 || pos%8 == 7) {
-                                    break;
-                                }
-                                else if d == 7 && (pos > 55 || pos%8 == 0) {
-                                    break;
-                                }
-                                else {
+                            }
+                            
+                        }, 
+                        PieceKind::Rook => {
+                            // this piece can move on files and ranks until there is a collision
+                            let directions: [i8; 4] = [-1,1,8,-8];
+
+                            for d in directions {
+                                let mut pos :i8 = sq;
+                                loop { 
                                     pos += d;
-                                }
-
-                                if self.is_piece_at(pos) {
-                                    if !self.is_side_at(pos, self.side_to_move) {
-                                        res.push(Move::Standard(from, pos));
+                                    if (pos/8 != sq/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
+                                        break;
                                     }
-                                    break;
-                                }
-                                res.push(Move::Standard(from,pos));
-                            }
-                        }
-                    }, 
-                    PieceKind::Knight => {
-
-                        // this piece can only move in L-shapes
-                        if from/8 > 1 && from % 8 > 0 {
-                            if !self.is_side_at(from - 2*8 - 1, self.side_to_move) {
-                                res.push(Move::Standard(from, from - 2*8 - 1));
-                            }
-                        }
-                        if from/8 > 1 && from % 8 < 7 {
-                            if !self.is_side_at(from - 2*8 + 1, self.side_to_move) {
-                                res.push(Move::Standard(from, from - 2*8 + 1));
-                            }
-                        }
-                        if from/8 > 0 && from % 8 > 1 {
-                            if !self.is_side_at(from - 1*8 - 2, self.side_to_move) {
-                                res.push(Move::Standard(from, from - 1*8 - 2));
-                            }
-                        }
-                        if from/8 > 0 && from % 8 < 6 {
-                            if !self.is_side_at(from - 1*8 + 2, self.side_to_move) {
-                                res.push(Move::Standard(from, from - 1*8 + 2));
-                            }
-                        }
-                        if from/8 < 6 && from % 8 > 0 {
-                            if !self.is_side_at(from + 2*8 - 1, self.side_to_move) {
-                                res.push(Move::Standard(from, from + 2*8 - 1));
-                            }
-                        }
-                        if from/8 < 6 && from % 8 < 7 {
-                            if !self.is_side_at(from + 2*8 + 1, self.side_to_move) {
-                                res.push(Move::Standard(from, from + 2*8 + 1));
-                            }
-                        }
-                        if from/8 < 7 && from % 8 > 1 {
-                            if !self.is_side_at(from + 1*8 - 2, self.side_to_move) {
-                                res.push(Move::Standard(from, from + 1*8 - 2));
-                            }
-                        }
-                        if from/8 < 7 && from % 8 < 6 {
-                            if !self.is_side_at(from + 1*8 + 2, self.side_to_move) {
-                                res.push(Move::Standard(from, from + 1*8 + 2));
-                            }
-                        }
-                        
-                    }, 
-                    PieceKind::Pawn => {
-                        
-                        if self.side_to_move == Side::White {
-
-                            // not promoting
-                            if from/8 > 1 { 
-                                // one step forward
-                                if !self.is_piece_at(from - 8) {
-                                    res.push(Move::Standard(from, from - 8));
-                                }
-
-                                // capture to the left
-                                if from%8 > 0 && self.is_side_at(from - 9, self.side_to_move.opposite()){
-                                    res.push(Move::Standard(from, from - 9));
-                                }
-
-                                // capture to the right
-                                if from%8 < 7 && self.is_side_at(from - 7, self.side_to_move.opposite()){
-                                    res.push(Move::Standard(from, from - 7));
+                                    else if self.is_piece_at(pos) {
+                                        if !self.is_side_at(pos, self.side_to_move) {
+                                            res.push(Move::Standard(sq, pos));
+                                        }
+                                        break;
+                                    }
+                                    res.push(Move::Standard(sq,pos));
                                 }
                             }
-                            
-                            // promoting 
-                            if from/8 == 1 {
-                                if !self.is_piece_at(from - 8) {
-                                    res.push(Move::Promotion(from, from - 8, PieceKind::Queen));
-                                    res.push(Move::Promotion(from, from - 8, PieceKind::Rook));
-                                    res.push(Move::Promotion(from, from - 8, PieceKind::Bishop));
-                                    res.push(Move::Promotion(from, from - 8, PieceKind::Knight));
-                                }
+                        }, 
+                        PieceKind::Bishop => {
+                            // this piece can move on diagonals until there is a collision
+                            let directions: [i8; 4] = [-9,-7,7,9];
 
-                                // capture to the left
-                                if from%8 > 0 && self.is_side_at(from - 9, self.side_to_move.opposite()){
-                                    res.push(Move::Promotion(from, from - 9, PieceKind::Queen));
-                                    res.push(Move::Promotion(from, from - 9, PieceKind::Rook));
-                                    res.push(Move::Promotion(from, from - 9, PieceKind::Bishop));
-                                    res.push(Move::Promotion(from, from - 9, PieceKind::Knight));
-                                }
+                            for d in directions {
+                                let mut pos :i8 = sq;
+                                loop { 
+                                    if d == -9 && (pos < 8 || pos%8 == 0) {
+                                        break;
+                                    }
+                                    else if d == -7 && (pos < 8 || pos%8 == 7) {
+                                        break;
+                                    }
+                                    else if d == 9 && (pos > 55 || pos%8 == 7) {
+                                        break;
+                                    }
+                                    else if d == 7 && (pos > 55 || pos%8 == 0) {
+                                        break;
+                                    }
+                                    else {
+                                        pos += d;
+                                    }
 
-                                // capture to the right
-                                if from%8 < 7 && self.is_side_at(from - 7, self.side_to_move.opposite()){
-                                    res.push(Move::Promotion(from, from - 7, PieceKind::Queen));
-                                    res.push(Move::Promotion(from, from - 7, PieceKind::Rook));
-                                    res.push(Move::Promotion(from, from - 7, PieceKind::Bishop));
-                                    res.push(Move::Promotion(from, from - 7, PieceKind::Knight));
-                                }
-
-                            }
-                        
-                            if from/8 == 6 { // two moves from the starting square
-                                if !self.is_piece_at(from - 8) && !self.is_piece_at(from - 16) {
-                                    res.push(Move::Standard(from, from - 16));
-                                }
-                            } 
-
-                            // en passant
-                            if let Some((from,to)) = self.en_passant {
-                                if to%8 > 0 && piece.square == to - 1 || to%8 < 7 && piece.square == to + 1 {
-                                    res.push(Move::EnPassant(piece.square,(to + from)/2));
+                                    if self.is_piece_at(pos) {
+                                        if !self.is_side_at(pos, self.side_to_move) {
+                                            res.push(Move::Standard(sq, pos));
+                                        }
+                                        break;
+                                    }
+                                    res.push(Move::Standard(sq,pos));
                                 }
                             }
+                        }, 
+                        PieceKind::Knight => {
 
-                        }
-                        else {
-                            // not promoting
-                            if from/8 < 6 { 
-                                if !self.is_piece_at(from + 8) {
-                                    res.push(Move::Standard(from, from + 8));
+                            // this piece can only move in L-shapes
+                            if sq/8 > 1 && sq % 8 > 0 {
+                                if !self.is_side_at(sq - 2*8 - 1, self.side_to_move) {
+                                    res.push(Move::Standard(sq, sq - 2*8 - 1));
                                 }
-
-                                // capture to the left
-                                if from%8 > 0 && self.is_side_at(from + 7, self.side_to_move.opposite()){
-                                    res.push(Move::Standard(from, from + 7));
-                                }
-
-                                // capture to the right
-                                if from%8 < 7 && self.is_side_at(from + 9, self.side_to_move.opposite()){
-                                    res.push(Move::Standard(from, from + 9));
-                                }
-
                             }
-                            
-                            // promoting
-                            if from/8 == 6 { 
-                                if !self.is_piece_at(from + 8) {
-                                    res.push(Move::Promotion(from, from + 8, PieceKind::Queen));
-                                    res.push(Move::Promotion(from, from + 8, PieceKind::Rook));
-                                    res.push(Move::Promotion(from, from + 8, PieceKind::Bishop));
-                                    res.push(Move::Promotion(from, from + 8, PieceKind::Knight));
+                            if sq/8 > 1 && sq % 8 < 7 {
+                                if !self.is_side_at(sq - 2*8 + 1, self.side_to_move) {
+                                    res.push(Move::Standard(sq, sq - 2*8 + 1));
                                 }
-
-                                // capture to the left
-                                if from%8 > 0 && self.is_side_at(from + 7, self.side_to_move.opposite()){
-                                    res.push(Move::Promotion(from, from + 7, PieceKind::Queen));
-                                    res.push(Move::Promotion(from, from + 7, PieceKind::Rook));
-                                    res.push(Move::Promotion(from, from + 7, PieceKind::Bishop));
-                                    res.push(Move::Promotion(from, from + 7, PieceKind::Knight));
+                            }
+                            if sq/8 > 0 && sq % 8 > 1 {
+                                if !self.is_side_at(sq - 1*8 - 2, self.side_to_move) {
+                                    res.push(Move::Standard(sq, sq - 1*8 - 2));
                                 }
-
-                                // capture to the right
-                                if from%8 < 7 && self.is_side_at(from + 9, self.side_to_move.opposite()){
-                                    res.push(Move::Promotion(from, from + 9, PieceKind::Queen));
-                                    res.push(Move::Promotion(from, from + 9, PieceKind::Rook));
-                                    res.push(Move::Promotion(from, from + 9, PieceKind::Bishop));
-                                    res.push(Move::Promotion(from, from + 9, PieceKind::Knight));
+                            }
+                            if sq/8 > 0 && sq % 8 < 6 {
+                                if !self.is_side_at(sq - 1*8 + 2, self.side_to_move) {
+                                    res.push(Move::Standard(sq, sq - 1*8 + 2));
+                                }
+                            }
+                            if sq/8 < 6 && sq % 8 > 0 {
+                                if !self.is_side_at(sq + 2*8 - 1, self.side_to_move) {
+                                    res.push(Move::Standard(sq, sq + 2*8 - 1));
+                                }
+                            }
+                            if sq/8 < 6 && sq % 8 < 7 {
+                                if !self.is_side_at(sq + 2*8 + 1, self.side_to_move) {
+                                    res.push(Move::Standard(sq, sq + 2*8 + 1));
+                                }
+                            }
+                            if sq/8 < 7 && sq % 8 > 1 {
+                                if !self.is_side_at(sq + 1*8 - 2, self.side_to_move) {
+                                    res.push(Move::Standard(sq, sq + 1*8 - 2));
+                                }
+                            }
+                            if sq/8 < 7 && sq % 8 < 6 {
+                                if !self.is_side_at(sq + 1*8 + 2, self.side_to_move) {
+                                    res.push(Move::Standard(sq, sq + 1*8 + 2));
                                 }
                             }
                             
-                            // two moves from the starting square
-                            if from/8 == 1 { 
-                                if !self.is_piece_at(from + 8) && !self.is_piece_at(from + 16) {
-                                    res.push(Move::Standard(from, from + 16));
-                                }
-                            } 
+                        }, 
+                        PieceKind::Pawn => {
+                            
+                            if self.side_to_move == Side::White {
 
-                            // en passant
-                            if let Some((from,to)) = self.en_passant {
-                                if to%8 > 0 && piece.square == to - 1 || to%8 < 7 && piece.square == to + 1 {
-                                    res.push(Move::EnPassant(piece.square,(to + from)/2));
+                                // not promoting
+                                if sq/8 > 1 { 
+                                    // one step forward
+                                    if !self.is_piece_at(sq - 8) {
+                                        res.push(Move::Standard(sq, sq - 8));
+                                    }
+
+                                    // capture to the left
+                                    if sq%8 > 0 && self.is_side_at(sq - 9, self.side_to_move.opposite()){
+                                        res.push(Move::Standard(sq, sq - 9));
+                                    }
+
+                                    // capture to the right
+                                    if sq%8 < 7 && self.is_side_at(sq - 7, self.side_to_move.opposite()){
+                                        res.push(Move::Standard(sq, sq - 7));
+                                    }
                                 }
+                                
+                                // promoting 
+                                if sq/8 == 1 {
+                                    if !self.is_piece_at(sq - 8) {
+                                        res.push(Move::Promotion(sq, sq - 8, PieceKind::Queen));
+                                        res.push(Move::Promotion(sq, sq - 8, PieceKind::Rook));
+                                        res.push(Move::Promotion(sq, sq - 8, PieceKind::Bishop));
+                                        res.push(Move::Promotion(sq, sq - 8, PieceKind::Knight));
+                                    }
+
+                                    // capture to the left
+                                    if sq%8 > 0 && self.is_side_at(sq - 9, self.side_to_move.opposite()){
+                                        res.push(Move::Promotion(sq, sq - 9, PieceKind::Queen));
+                                        res.push(Move::Promotion(sq, sq - 9, PieceKind::Rook));
+                                        res.push(Move::Promotion(sq, sq - 9, PieceKind::Bishop));
+                                        res.push(Move::Promotion(sq, sq - 9, PieceKind::Knight));
+                                    }
+
+                                    // capture to the right
+                                    if sq%8 < 7 && self.is_side_at(sq - 7, self.side_to_move.opposite()){
+                                        res.push(Move::Promotion(sq, sq - 7, PieceKind::Queen));
+                                        res.push(Move::Promotion(sq, sq - 7, PieceKind::Rook));
+                                        res.push(Move::Promotion(sq, sq - 7, PieceKind::Bishop));
+                                        res.push(Move::Promotion(sq, sq - 7, PieceKind::Knight));
+                                    }
+
+                                }
+                            
+                                if sq/8 == 6 { // two moves sq the starting square
+                                    if !self.is_piece_at(sq - 8) && !self.is_piece_at(sq - 16) {
+                                        res.push(Move::Standard(sq, sq - 16));
+                                    }
+                                } 
+
+                                // en passant
+                                if let Some((from,to)) = self.en_passant {
+                                    if to%8 > 0 && sq == to - 1 || to%8 < 7 && sq == to + 1 {
+                                        res.push(Move::EnPassant(sq,(to + from)/2));
+                                    }
+                                }
+
                             }
+                            else {
+                                // not promoting
+                                if sq/8 < 6 { 
+                                    if !self.is_piece_at(sq + 8) {
+                                        res.push(Move::Standard(sq, sq + 8));
+                                    }
 
-                        }
-                    }, 
+                                    // capture to the left
+                                    if sq%8 > 0 && self.is_side_at(sq + 7, self.side_to_move.opposite()){
+                                        res.push(Move::Standard(sq, sq + 7));
+                                    }
+
+                                    // capture to the right
+                                    if sq%8 < 7 && self.is_side_at(sq + 9, self.side_to_move.opposite()){
+                                        res.push(Move::Standard(sq, sq + 9));
+                                    }
+
+                                }
+                                
+                                // promoting
+                                if sq/8 == 6 { 
+                                    if !self.is_piece_at(sq + 8) {
+                                        res.push(Move::Promotion(sq, sq + 8, PieceKind::Queen));
+                                        res.push(Move::Promotion(sq, sq + 8, PieceKind::Rook));
+                                        res.push(Move::Promotion(sq, sq + 8, PieceKind::Bishop));
+                                        res.push(Move::Promotion(sq, sq + 8, PieceKind::Knight));
+                                    }
+
+                                    // capture to the left
+                                    if sq%8 > 0 && self.is_side_at(sq + 7, self.side_to_move.opposite()){
+                                        res.push(Move::Promotion(sq, sq + 7, PieceKind::Queen));
+                                        res.push(Move::Promotion(sq, sq + 7, PieceKind::Rook));
+                                        res.push(Move::Promotion(sq, sq + 7, PieceKind::Bishop));
+                                        res.push(Move::Promotion(sq, sq + 7, PieceKind::Knight));
+                                    }
+
+                                    // capture to the right
+                                    if sq%8 < 7 && self.is_side_at(sq + 9, self.side_to_move.opposite()){
+                                        res.push(Move::Promotion(sq, sq + 9, PieceKind::Queen));
+                                        res.push(Move::Promotion(sq, sq + 9, PieceKind::Rook));
+                                        res.push(Move::Promotion(sq, sq + 9, PieceKind::Bishop));
+                                        res.push(Move::Promotion(sq, sq + 9, PieceKind::Knight));
+                                    }
+                                }
+                                
+                                // two moves from the starting square
+                                if sq/8 == 1 { 
+                                    if !self.is_piece_at(sq + 8) && !self.is_piece_at(sq + 16) {
+                                        res.push(Move::Standard(sq, sq + 16));
+                                    }
+                                } 
+
+                                // en passant
+                                if let Some((from,to)) = self.en_passant {
+                                    if to%8 > 0 && sq == to - 1 || to%8 < 7 && sq == to + 1 {
+                                        res.push(Move::EnPassant(sq,(to + from)/2));
+                                    }
+                                }
+
+                            }
+                        }, 
+                    }
                 }
             }
         }
@@ -605,7 +601,8 @@ impl BoardState {
 
             let un_move = self.apply_move_unchecked(chess_move);
             let is_illegal = self.is_in_check(self.side_to_move.opposite());
-            self.un_move_unchecked(un_move);
+            let success = self.un_move_unchecked(un_move);
+            debug_assert!(success, "Failed to unmake {chess_move:?}");
 
             !is_illegal
         });
@@ -615,29 +612,171 @@ impl BoardState {
     }
 
     // returns of the king of the specified side is currently in check
-    // this is mostly for legality checking for now
+    // this is mostly for legality checking for now [FIXED]
     pub fn is_in_check(&self, side: Side) -> bool {
         
-        let mut king_position: i8 = -1;
+        let king_position = self.piece_arr
+                                    .iter()
+                                    .position(|piece| {
+                                        piece.is_some_and(|p| p.side == side && p.kind == PieceKind::King)
+                                    })
+                                    .expect("Board state has no king for the requested side") as i8;
+
+        self.is_attacked(king_position, side.opposite())
+    }
         
-        for piece in &self.pieces {
-            if piece.side == side && piece.kind == PieceKind::King {
-                king_position = piece.square;
-                break;
+    // returns true if the given square is attacked by the given side [FIXED]
+    pub fn is_attacked(&self, square: i8, side: Side) -> bool {
+
+        // first we look for an attack in the direction of a rook
+        let directions: [i8; 4] = [-1,1,8,-8];
+        for d in directions {
+            let mut pos: i8 = square;
+            loop { 
+                pos += d;
+                if (pos/8 != square/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
+                    break;
+                }
+                else if self.is_piece_at(pos) {
+                    if self.is_side_at(pos,side) && (self.is_kind_at(pos, PieceKind::Rook) || self.is_kind_at(pos, PieceKind::Queen)) {
+                        return true;
+                    }
+                    break;
+                }
             }
         }
 
-        if king_position == -1 {
-            return false;
+        // then in the directions of a bishop
+        let directions: [i8; 4] = [-9,-7,7,9];
+
+        for d in directions {
+            let mut pos: i8 = square;
+            loop { 
+                if d == -9 && (pos < 8 || pos%8 == 0) {
+                    break;
+                }
+                else if d == -7 && (pos < 8 || pos%8 == 7) {
+                    break;
+                }
+                else if d == 9 && (pos > 55 || pos%8 == 7) {
+                    break;
+                }
+                else if d == 7 && (pos > 55 || pos%8 == 0) {
+                    break;
+                }
+                else {
+                    pos += d;
+                }
+
+                if self.is_piece_at(pos) {
+                    if self.is_side_at(pos,side) && (self.is_kind_at(pos, PieceKind::Bishop) || self.is_kind_at(pos, PieceKind::Queen)){
+                        return true;
+                    }
+                    break;
+                }
+            }
         }
-        else {
-            return self.is_attacked(king_position, side.opposite());
+
+        // then in the possible squares for a knight
+        if square/8 > 1 && square % 8 > 0 {
+            let pos = square - 2*8 - 1;
+            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
+                return true;
+            } 
         }
-    }
+        if square/8 > 1 && square % 8 < 7 {
+            let pos = square - 2*8 + 1;
+            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
+                return true;
+            }
+        }
+        if square/8 > 0 && square % 8 > 1 {
+            let pos = square - 1*8 - 2;
+            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
+                return true;
+            }
+        }
+        if square/8 > 0 && square % 8 < 6 {
+            let pos = square - 1*8 + 2;
+            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
+                return true;
+            }
+        }
+        if square/8 < 6 && square % 8 > 0 {
+            let pos = square + 2*8 - 1;
+            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
+                return true;
+            }
+        }
+        if square/8 < 6 && square % 8 < 7 {
+            let pos = square + 2*8 + 1;
+            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
+                return true;
+            }
+        }
+        if square/8 < 7 && square % 8 > 1 {
+            let pos = square + 1*8 - 2;
+            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
+                return true;
+            }
+        }
+        if square/8 < 7 && square % 8 < 6 {
+            let pos = square + 1*8 + 2;
+            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
+                return true;
+            }
+        }
+
+        // possible attacks by the king
+        if square % 8 > 0 && square/8 > 0 && self.is_side_at(square - 9, side) && self.is_kind_at(square - 9, PieceKind::King) {
+            return true;
+        }
+        if square/8 > 0 && self.is_side_at(square - 8, side) && self.is_kind_at(square - 8, PieceKind::King) {
+            return true;
+        }
+        if square % 8 < 7 && square/8 > 0 && self.is_side_at(square - 7, side) && self.is_kind_at(square - 7, PieceKind::King) {
+            return true;
+        }
+        if square % 8 < 7 && self.is_side_at(square + 1, side) && self.is_kind_at(square + 1, PieceKind::King) {
+            return true;
+        }
+        if square % 8 < 7 && square/8 < 7 && self.is_side_at(square + 9, side) && self.is_kind_at(square + 9, PieceKind::King) {
+            return true;
+        }
+        if square/8 < 7 && self.is_side_at(square + 8, side) && self.is_kind_at(square + 8, PieceKind::King) {
+            return true;
+        }
+        if square % 8 > 0 && square/8 < 7 && self.is_side_at(square + 7, side) && self.is_kind_at(square + 7, PieceKind::King){
+            return true;
+        }
+        if square % 8 > 0 && self.is_side_at(square - 1, side) && self.is_kind_at(square - 1, PieceKind::King) {
+            return true;
+        }
+
+        // possible attacks by pawns
+        match side {
+            Side::Black => {
+                if square % 8 > 0 && square/8 > 0 && self.is_kind_at(square - 9, PieceKind::Pawn) && self.is_side_at(square - 9, Side::Black) {
+                    return true;
+                }
+                if square % 8 < 7 && square/8 > 0 && self.is_kind_at(square - 7, PieceKind::Pawn) && self.is_side_at(square - 7, Side::Black) {
+                    return true;
+                }
+            },
+            Side::White => {
+                if square % 8 > 0 && square/8 < 7 && self.is_kind_at(square + 7, PieceKind::Pawn) && self.is_side_at(square + 7, Side::White) {
+                    return true;
+                }
+                if square % 8 < 7 && square/8 < 7 && self.is_kind_at(square + 9, PieceKind::Pawn) && self.is_side_at(square + 9, Side::White) {
+                    return true;
+                }
+            },
+        }
+
+        // This is reached if there is no attack
+        return false;
         
-    // returns true if the given square is attacked by the given side
-    pub fn is_attacked(&self, square: i8, side: Side) -> bool {
-        
+        /*
         for piece in &self.pieces {
             if piece.side == side {
                 match piece.kind {
@@ -810,12 +949,13 @@ impl BoardState {
                 }
             }
         }
+        */
 
-        return false;
+        //return false;
     }
 
     // returns a priority value for a move, saying how urgently 
-    // one should look at it in the analysis
+    // one should look at it in the analysis [FIXED]
     pub fn priority(&self, m: &Move) -> f64 {
 
         let mut res: f64 = 0.;
@@ -847,7 +987,7 @@ impl BoardState {
     }
 
     // this unmakes a move, given an un-move
-    // returns true if successful 
+    // returns true if successful [FIXED]
     pub fn un_move_unchecked(&mut self, um: UnMove) -> bool {
 
         // implement the un-move on piece placement, 
@@ -858,18 +998,18 @@ impl BoardState {
             match um.movement {
                 Move::Standard(from,to) => {
 
-                    // get index of the appropriate pieces
-                    let to_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == to);
-                    let from_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == from);
-
-                    if let (Some(index), None) = (to_index, from_index) {
-                        if self.pieces[index].side == self.side_to_move.opposite() {
+                    if let (None, Some(p)) = (&self.piece_arr[from as usize], &self.piece_arr[to as usize]) {
+                        if p.side == self.side_to_move.opposite() {
                             // if all is well, move the piece back
-                            self.pieces[index].square = from;
+                            self.piece_arr[from as usize] = Some(p).cloned();
+
                             // restore any captured piece if there was one
                             if let Some(captured_piece) = um.capture {
-                                self.pieces.push(captured_piece);
-                            } 
+                                self.piece_arr[to as usize] = Some(captured_piece);
+                            }
+                            else {
+                                self.piece_arr[to as usize] = None;
+                            }
                         }
                         else {
                             return false;
@@ -887,20 +1027,25 @@ impl BoardState {
                     }
 
                     // check for a king and rook in place
-                    let king_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == to);
-                    let rook_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == (to + from)/2);
+                    //let king_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == to);
+                    //let rook_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == (to + from)/2);
 
-                    if let (Some(k), Some(r)) = (king_index, rook_index) {
+                    if let (Some(k), Some(r)) = (self.piece_arr[to as usize], self.piece_arr[((from + to)/2) as usize]) {
                         if 
-                            self.pieces[k].kind == PieceKind::King && 
-                            self.pieces[k].side == self.side_to_move.opposite() && 
+                            k.kind == PieceKind::King && 
+                            k.side == self.side_to_move.opposite() && 
                             !self.is_piece_at(from) &&
-                            self.pieces[r].kind == PieceKind::Rook && 
-                            self.pieces[r].side == self.side_to_move.opposite() && 
+                            r.kind == PieceKind::Rook && 
+                            r.side == self.side_to_move.opposite() && 
                             !self.is_piece_at(to + (to - from).signum()*(1 + (7 - to%8)/4))
                         {
-                            self.pieces[k].square = from;
-                            self.pieces[r].square = to + (to - from).signum()*(1 + (7 - to%8)/4);
+                            // move the rook and the king
+                            self.piece_arr[from as usize] = Some(k.clone());
+                            self.piece_arr[(to + (to - from).signum()*(1 + (7 - to%8)/4)) as usize] = Some(r.clone());
+
+                            // reset the squares where they were
+                            self.piece_arr[to as usize] = None;
+                            self.piece_arr[(to - (to - from).signum()) as usize] = None;
                         }
                         else {
                             return false;
@@ -917,17 +1062,15 @@ impl BoardState {
                         if captured_piece.kind == PieceKind::Pawn {
                             // control for correct pieces in the correct squares
                             let capture_square = (from / 8) * 8 + to % 8;
-                                
-                            let pawn_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == to);
-                            let capture_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == capture_square);
-                            let empty_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == from);
 
-                            if let (Some(index), None, None) = (pawn_index, empty_index, capture_index) {
-                                if self.pieces[index].kind == PieceKind::Pawn {
+                            if let (Some(p), None, None) = (self.piece_arr[to as usize], self.piece_arr[capture_square as usize], self.piece_arr[from as usize]) {
+                                if p.kind == PieceKind::Pawn {
                                     // if all is well, move one pawn back
-                                    self.pieces[index].square = from;
+                                    self.piece_arr[from as usize] = Some(p.clone());
+                                    self.piece_arr[to as usize] = None;
+
                                     // and add the captured pawn again
-                                    self.pieces.push(captured_piece);
+                                    self.piece_arr[capture_square as usize] = Some(captured_piece);
                                 }
                                 else {
                                     return false;
@@ -949,19 +1092,23 @@ impl BoardState {
                     // a promotion must always happen on the final ranks
                     if to/8 == 7 || to/8 == 0 {
                         // control for the correct pieces in the correct squares
-                        let pawn_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == to);
-                        let empty_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == from);
+                        //let pawn_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == to);
+                        //let empty_index: Option<usize> = self.pieces.iter().position(|piece| piece.square == from);
 
-                        if let (Some(index), None) = (pawn_index, empty_index) {
-                            if self.pieces[index].kind == kind {
+                        if let (Some(mut p), None) = (self.piece_arr[to as usize], self.piece_arr[from as usize]) {
+                            if p.kind == kind {
                                 // if all is in place, then we un-promote
-                                self.pieces[index].kind = PieceKind::Pawn;
+                                p.kind = PieceKind::Pawn;
                                 // we move the pawn back
-                                self.pieces[index].square = from;
+                                self.piece_arr[from as usize] = Some(p.clone());
+
                                 // and we give back any captured piece
-                                if let Some(captured_piece) = um.capture {
-                                    self.pieces.push(captured_piece);
-                                }
+                                self.piece_arr[to as usize] = if let Some(captured_piece) = um.capture {
+                                        Some(captured_piece)
+                                    }
+                                    else {
+                                        None
+                                    };
                             }
                             else {
                                 return false;
@@ -993,7 +1140,7 @@ impl BoardState {
     }
 }
 
-// for converting coordinates into moves
+// for converting coordinates into moves [FIXED]
 pub fn coordinates_to_move(board_state: &BoardState, from: i8, to: i8) -> Move {
     
     // castling for black
@@ -1015,12 +1162,16 @@ pub fn coordinates_to_move(board_state: &BoardState, from: i8, to: i8) -> Move {
     }
     
     // capturing en_passant
-    if let Some((f,t)) = board_state.en_passant {
-        if to == (f + t)/2 && board_state.is_kind_at(from, PieceKind::Pawn) {
-            return Move::EnPassant(from, (t + f)/2);
-        }
-        else {
-            return Move::Standard(from,to);
+    if let Some((previous_from, previous_to)) = board_state.en_passant {
+        let en_passant_destination = (previous_from + previous_to) / 2;
+
+        if to == en_passant_destination
+            && board_state.is_kind_at(from, PieceKind::Pawn)
+            && !board_state.is_piece_at(to)
+            && from / 8 == previous_to / 8
+            && (from - previous_to).abs() == 1
+        {
+            return Move::EnPassant(from, to);
         }
     }
     
@@ -1036,7 +1187,7 @@ pub fn coordinates_to_move(board_state: &BoardState, from: i8, to: i8) -> Move {
     }
 }
 
-// methods for accessing piece information at various squares
+// methods for accessing piece information at various squares [FIXED]
 impl BoardState { 
 
     pub fn is_piece_at(&self, square: i8) -> bool {
@@ -1044,10 +1195,8 @@ impl BoardState {
             return false;
         }
         else {
-            for p in &self.pieces {
-                if p.square == square {
-                    return true;
-                }
+            if let Some(_) = self.piece_arr[square as usize] {
+                return true;
             }
             return false;
         }
@@ -1055,18 +1204,16 @@ impl BoardState {
 
     pub fn kind_at(&self, square: i8) -> Option<PieceKind> {
 
-        for p in &self.pieces {
-            if p.square == square {
-                return Some(p.kind)
-            }
+        if let Some(p) = &self.piece_arr[square as usize] {
+            return Some(p.kind);
         }
 
         return None;
     }
 
     pub fn is_kind_at(&self, square: i8, kind: PieceKind) -> bool {
-        for p in &self.pieces {
-            if p.square == square && p.kind == kind {
+        if let Some(p) = &self.piece_arr[square as usize] {
+            if p.kind == kind {
                 return true;
             }
         }
@@ -1074,8 +1221,8 @@ impl BoardState {
     }
 
     pub fn is_side_at(&self, square: i8, side: Side) -> bool {
-        for p in &self.pieces {
-            if p.square == square && p.side == side {
+        if let Some(p) = &self.piece_arr[square as usize] {
+            if p.side == side {
                 return true;
             }
         }
@@ -1084,12 +1231,12 @@ impl BoardState {
 
 }
 
-// methods for setting up the starting position of the board
+// methods for setting up the starting position of the board [FIXED]
 impl BoardState { 
 
     pub fn to_starting_position(&mut self) {
         self.side_to_move = Side::White;
-        self.pieces = self.starting_pieces();
+        self.piece_arr = self.starting_pieces();
         self.white_short_castle = true; 
         self.white_long_castle = true; 
         self.black_short_castle = true; 
@@ -1097,33 +1244,33 @@ impl BoardState {
         self.en_passant = None;
     }
 
-    fn starting_pieces(&self) -> Vec<Piece> {
-        let mut res = Vec::<Piece>::new();
+    fn starting_pieces(&self) -> [Option<Piece>;64] {
+        let mut res = [None; 64];
 
         // black pieces
-        res.push(Piece{side: Side::Black, kind: PieceKind::Rook, square: 0});
-        res.push(Piece{side: Side::Black, kind: PieceKind::Knight, square: 1});
-        res.push(Piece{side: Side::Black, kind: PieceKind::Bishop, square: 2});
-        res.push(Piece{side: Side::Black, kind: PieceKind::Queen, square: 3});
-        res.push(Piece{side: Side::Black, kind: PieceKind::King, square: 4});
-        res.push(Piece{side: Side::Black, kind: PieceKind::Bishop, square: 5});
-        res.push(Piece{side: Side::Black, kind: PieceKind::Knight, square: 6});
-        res.push(Piece{side: Side::Black, kind: PieceKind::Rook, square: 7});
+        res[0] = Some(Piece{side: Side::Black, kind: PieceKind::Rook});
+        res[1] = Some(Piece{side: Side::Black, kind: PieceKind::Knight});
+        res[2] = Some(Piece{side: Side::Black, kind: PieceKind::Bishop});
+        res[3] = Some(Piece{side: Side::Black, kind: PieceKind::Queen});
+        res[4] = Some(Piece{side: Side::Black, kind: PieceKind::King});
+        res[5] = Some(Piece{side: Side::Black, kind: PieceKind::Bishop});
+        res[6] = Some(Piece{side: Side::Black, kind: PieceKind::Knight});
+        res[7] = Some(Piece{side: Side::Black, kind: PieceKind::Rook});
         
         // white pieces
-        res.push(Piece{side: Side::White, kind: PieceKind::Rook, square: 56});
-        res.push(Piece{side: Side::White, kind: PieceKind::Knight, square: 57});
-        res.push(Piece{side: Side::White, kind: PieceKind::Bishop, square: 58});
-        res.push(Piece{side: Side::White, kind: PieceKind::Queen, square: 59});
-        res.push(Piece{side: Side::White, kind: PieceKind::King, square: 60});
-        res.push(Piece{side: Side::White, kind: PieceKind::Bishop, square: 61});
-        res.push(Piece{side: Side::White, kind: PieceKind::Knight, square: 62});
-        res.push(Piece{side: Side::White, kind: PieceKind::Rook, square: 63});
+        res[56] = Some(Piece{side: Side::White, kind: PieceKind::Rook});
+        res[57] = Some(Piece{side: Side::White, kind: PieceKind::Knight});
+        res[58] = Some(Piece{side: Side::White, kind: PieceKind::Bishop});
+        res[59] = Some(Piece{side: Side::White, kind: PieceKind::Queen});
+        res[60] = Some(Piece{side: Side::White, kind: PieceKind::King});
+        res[61] = Some(Piece{side: Side::White, kind: PieceKind::Bishop});
+        res[62] = Some(Piece{side: Side::White, kind: PieceKind::Knight});
+        res[63] = Some(Piece{side: Side::White, kind: PieceKind::Rook});
 
         // pawns
         for i in 0..8 {
-            res.push(Piece{side: Side::Black, kind: PieceKind::Pawn, square: 8 + i});
-            res.push(Piece{side: Side::White, kind: PieceKind::Pawn, square: 48 + i});
+            res[8 + i] = Some(Piece{side: Side::Black, kind: PieceKind::Pawn});
+            res[48 + i] = Some(Piece{side: Side::White, kind: PieceKind::Pawn});
         }
 
         return res;
@@ -1132,15 +1279,16 @@ impl BoardState {
 
 }
 
-// the Move enum 
+// the Move enum [FIXED]
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Move { // this contains from, to, and then optional data
-    Standard(i8,i8),
+pub enum Move { 
+    Standard(i8,i8),// this contains from, to, and then optional data
     Castle(i8,i8),
     EnPassant(i8,i8),
     Promotion(i8,i8, PieceKind), // for now promotions only give queens, we will fix this later
 }
 
+// functions relevant for Move [FIXED]
 impl Move {
 
     pub fn to_text(&self) -> String {
@@ -1185,7 +1333,7 @@ impl Move {
 
 }
 
-// saves the data that is necessary to revert to the previous state
+// saves the data that is necessary to revert to the previous state [FIXED]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UnMove {
     pub movement: Move,
@@ -1198,16 +1346,15 @@ pub struct UnMove {
     pub en_passant: Option<(i8,i8)>,
 }
 
-
-
-// the Piece structure, for now rather simple
-#[derive(Clone, Debug, Eq, PartialEq)]
+// the Piece structure, for now rather simple [FIXED]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Piece {
     pub side: Side,
     pub kind: PieceKind,
-    pub square: i8,
 }
 
+
+// for now just a piece value function [FIXED]
 impl Piece {
     // returns the numerical value of the piece
     pub fn get_value(&self) -> f64 {
@@ -1223,7 +1370,7 @@ impl Piece {
 
 }
 
-// the different kinds of pieces in an Enum
+// the different kinds of pieces in an Enum [FIXED]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PieceKind {
     King,
@@ -1234,7 +1381,7 @@ pub enum PieceKind {
     Pawn,
 }
 
-// functions related to the Side enum
+// functions related to the Side enum [FIXED]
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Side {
@@ -1242,8 +1389,8 @@ pub enum Side {
     White,
 }
 
+// just an opposite function [FIXED]
 impl Side {
-
     pub fn opposite(&self) -> Side {
         match self {
             Side::White => return Side::Black,

@@ -34,9 +34,10 @@ const QUEEN_CONTROL_STRAIGHT: f64 = 0.2;
 const QUEEN_ATTACK_STRAIGHT: f64 =  0.2;
 
 
-// methods for evaluating a position at face value
+// methods for evaluating a position at face value [FIXED]
 impl BoardState {
 
+    // Evaluates a position at face value [FIXED]
     pub fn evaluation(&self) -> f64 {
 
         let mut res: f64 = 0.;
@@ -47,319 +48,316 @@ impl BoardState {
         let mut black_king: i8 = -1;
         let mut total_pieces: f64 = 0.;
 
-        for piece in &self.pieces {
-            total_pieces += 1.;
+        for i in 0..64 {
+            if let Some(piece) = self.piece_arr[i] {
+                total_pieces += 1.;
 
-            if piece.kind == PieceKind::King {
-                if piece.side == Side::White {
-                    white_king = piece.square;
+                if piece.kind == PieceKind::King {
+                    if piece.side == Side::White {
+                        white_king = i as i8;
+                    }
+                    else {
+                        black_king = i as i8;
+                    }
                 }
-                else {
-                    black_king = piece.square;
-                }
+
+                res += match piece.side {
+                    Side::White => piece.get_value(),
+                    Side::Black => -piece.get_value()
+                };
             }
-
-            res += match piece.side {
-                Side::White => {
-                    piece.get_value()
-                }
-                Side::Black => {
-                    -piece.get_value()
-                }
-            };
         }
 
         
 
         // various strategic evaluations of the position
-        for piece in &self.pieces {
+        for i in 0..64 {
+            if let Some(piece) = self.piece_arr[i] {
+                let sq = i as i8;
+
+                let sign: f64 = match piece.side {
+                    Side::White => 1.,
+                    Side::Black => -1.,
+                };
+
+                let king_distance: f64 = match piece.side {
+                    Side::Black => ((white_king%8 - sq%8).abs() + (white_king/8 - sq/8).abs()) as f64,
+                    Side::White => ((black_king%8 - sq%8).abs() + (black_king/8 - sq/8).abs()) as f64,
+                };
+
+                // value for being close to the king, this is more important the fewer pieces there are on the board
+                res += -sign*king_distance*KING_PROXIMITY/(1. + total_pieces).sqrt();
+                        
+                match piece.kind {
+                    PieceKind::King => {
+                        // Control exerted by the king
+                        if sq % 8 > 0 && sq/8 > 0 {
+                            control[(sq - 9) as usize] += sign*KING_CONTROL;
+                        }
+                        if sq/8 > 0 {
+                            control[(sq - 8) as usize] += sign*KING_CONTROL;
+                        }
+                        if sq % 8 < 7 && sq/8 > 0 {
+                            control[(sq - 7) as usize] += sign*KING_CONTROL;
+                        }
+                        if sq % 8 < 7 {
+                            control[(sq + 1) as usize] += sign*KING_CONTROL;
+                        }
+                        if sq % 8 < 7 && sq/8 < 7 {
+                            control[(sq + 9) as usize] += sign*KING_CONTROL;
+                        }
+                        if sq/8 < 7 {
+                            control[(sq + 8) as usize] += sign*KING_CONTROL;
+                        }
+                        if sq % 8 > 0 && sq/8 < 7 {
+                            control[(sq + 7) as usize] += sign*KING_CONTROL;
+                        }
+                        if sq % 8 > 0 {
+                            control[(sq - 1) as usize] += sign*KING_CONTROL;
+                        }
+                        
+                        // the King is valuable when there are no opposing pieces nearby
+
+                        // the King is in trouble when close to the edge
+                        let v: f64 = (sq%8) as f64;
+                        let w: f64 = (sq/8) as f64;
+                        res += sign*((7.*v - v*v + 7.*w - w*w).sqrt())*KING_EDGE/total_pieces;
+                    },
+                    PieceKind::Queen => {
+                        
+                        // The control exerted by the queens
+                        let directions: [i8; 4] = [-9,-7,7,9];
+
+                        for d in directions {
+                            let mut pos: i8 = sq;
+                            loop { 
+                                if d == -9 && (pos < 8 || pos%8 == 0) {
+                                    break;
+                                }
+                                else if d == -7 && (pos < 8 || pos%8 == 7) {
+                                    break;
+                                }
+                                else if d == 9 && (pos > 55 || pos%8 == 7) {
+                                    break;
+                                }
+                                else if d == 7 && (pos > 55 || pos%8 == 0) {
+                                    break;
+                                }
+                                else {
+                                    pos += d;
+                                }
+
+                                if self.is_piece_at(pos) {
+                                    if !self.is_side_at(pos, piece.side) {
+                                        control[pos as usize] += sign*QUEEN_ATTACK_DIAGONAL;
+                                    }
+                                    break;
+                                }
+                                control[pos as usize] += sign*QUEEN_CONTROL_DIAGONAL;
+                            }
+                        }
+                        
+
+                        let directions: [i8; 4] = [-1,1,8,-8];
+
+                        for d in directions {
+                            let mut pos: i8 = sq;
+                            loop { 
+                                pos += d;
+                                if (pos/8 != sq/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
+                                    break;
+                                }
+                                else if self.is_piece_at(pos) {
+                                    if !self.is_side_at(pos, piece.side) {
+                                        control[pos as usize] += sign*QUEEN_ATTACK_STRAIGHT;
+                                    }
+                                    break;
+                                }
+                                control[pos as usize] += sign*QUEEN_CONTROL_STRAIGHT;
+                            }
+                        }
+                    },
+                    PieceKind::Rook => {
+
+                        // Control exerted by a rook
+                        let directions: [i8; 4] = [-1,1,8,-8];
+                        for d in directions {
+                            let mut pos: i8 = sq;
+                            loop { 
+                                pos += d;
+                                if (pos/8 != sq/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
+                                    break;
+                                }
+                                else if self.is_piece_at(pos) {
+                                    if !self.is_side_at(pos, piece.side) {
+                                        control[pos as usize] += sign*ROOK_ATTACK;
+                                    }
+                                    break;
+                                }
+                                control[pos as usize] += sign*ROOK_CONTROL;
+                            }
+                        }
+                    },
+                    PieceKind::Bishop => {
+
+                        // Control exerted by a bishop
+                        let directions: [i8; 4] = [-9,-7,7,9];
+                        for d in directions {
+                            let mut pos: i8 = sq;
+                            loop { 
+                                if d == -9 && (pos < 8 || pos%8 == 0) {
+                                    break;
+                                }
+                                else if d == -7 && (pos < 8 || pos%8 == 7) {
+                                    break;
+                                }
+                                else if d == 9 && (pos > 55 || pos%8 == 7) {
+                                    break;
+                                }
+                                else if d == 7 && (pos > 55 || pos%8 == 0) {
+                                    break;
+                                }
+                                else {
+                                    pos += d;
+                                }
+
+                                if self.is_piece_at(pos) {
+                                    if !self.is_side_at(pos, piece.side) {
+                                        control[pos as usize] += sign*BISHOP_ATTACK;
+                                    }
+                                    break;
+                                }
+                                control[pos as usize] += sign*BISHOP_CONTROL;
+                            }
+                        }
             
-            let sq = piece.square;
+                    },
+                    PieceKind::Knight => {
 
-            let sign: f64 = match piece.side {
-                Side::White => 1.,
-                Side::Black => -1.,
-            };
-
-            let king_distance: f64 = match piece.side {
-                Side::Black => ((white_king%8 - sq%8).abs() + (white_king/8 - sq/8).abs()) as f64,
-                Side::White => ((black_king%8 - sq%8).abs() + (black_king/8 - sq/8).abs()) as f64,
-            };
-
-            // value for being close to the king, this is more important the fewer pieces there are on the board
-            res += -sign*king_distance*KING_PROXIMITY/(1. + total_pieces).sqrt();
-                    
-            match piece.kind {
-                PieceKind::King => {
-                    // Control exerted by the king
-                    if sq % 8 > 0 && sq/8 > 0 {
-                        control[(sq - 9) as usize] += sign*KING_CONTROL;
-                    }
-                    if sq/8 > 0 {
-                        control[(sq - 8) as usize] += sign*KING_CONTROL;
-                    }
-                    if sq % 8 < 7 && sq/8 > 0 {
-                        control[(sq - 7) as usize] += sign*KING_CONTROL;
-                    }
-                    if sq % 8 < 7 {
-                        control[(sq + 1) as usize] += sign*KING_CONTROL;
-                    }
-                    if sq % 8 < 7 && sq/8 < 7 {
-                        control[(sq + 9) as usize] += sign*KING_CONTROL;
-                    }
-                    if sq/8 < 7 {
-                        control[(sq + 8) as usize] += sign*KING_CONTROL;
-                    }
-                    if sq % 8 > 0 && sq/8 < 7 {
-                        control[(sq + 7) as usize] += sign*KING_CONTROL;
-                    }
-                    if sq % 8 > 0 {
-                        control[(sq - 1) as usize] += sign*KING_CONTROL;
-                    }
-                    
-                    // the King is valuable when there are no opposing pieces nearby
-
-                    // the King is in trouble when close to the edge
-                    let v: f64 = (sq%8) as f64;
-                    let w: f64 = (sq/8) as f64;
-                    res += sign*((7.*v - v*v + 7.*w - w*w).sqrt())*KING_EDGE/total_pieces;
-                },
-                PieceKind::Queen => {
-                    
-                    // The control exerted by the queens
-                    let directions: [i8; 4] = [-9,-7,7,9];
-
-                    for d in directions {
-                        let mut pos: i8 = sq;
-                        loop { 
-                            if d == -9 && (pos < 8 || pos%8 == 0) {
-                                break;
+                        // "a knight on the rim is dim"
+                        let v: f64 = (sq%8) as f64;
+                        res += sign*((7.*v - v*v).sqrt())*KNIGHT_SIDE;
+                        
+                        // Control exerted by a knight, 
+                        // this is some silly code and can for sure be written more cleanly
+                        if sq/8 > 1 && sq % 8 > 0 {
+                            let pos = (sq - 2*8 - 1) as usize;
+                            if !self.is_piece_at(pos as i8) {
+                                control[pos] += sign*KNIGHT_CONTROL;
                             }
-                            else if d == -7 && (pos < 8 || pos%8 == 7) {
-                                break;
+                            else if !self.is_side_at(pos as i8, piece.side) {
+                                control[pos] += sign*KNIGHT_ATTACK;
                             }
-                            else if d == 9 && (pos > 55 || pos%8 == 7) {
-                                break;
+                        }
+                        if sq/8 > 1 && sq % 8 < 7 {
+                            let pos = (sq - 2*8 + 1) as usize;
+                            if !self.is_piece_at(pos as i8) {
+                                control[pos] += sign*KNIGHT_CONTROL;
                             }
-                            else if d == 7 && (pos > 55 || pos%8 == 0) {
-                                break;
+                            else if !self.is_side_at(pos as i8, piece.side) {
+                                control[pos] += sign*KNIGHT_ATTACK;
                             }
-                            else {
-                                pos += d;
+                        }
+                        if sq/8 > 0 && sq % 8 > 1 {
+                            let pos = (sq - 1*8 - 2) as usize;
+                            if !self.is_piece_at(pos as i8) {
+                                control[pos] += sign*KNIGHT_CONTROL;
                             }
-
-                            if self.is_piece_at(pos) {
-                                if !self.is_side_at(pos, piece.side) {
-                                    control[pos as usize] += sign*QUEEN_ATTACK_DIAGONAL;
+                            else if !self.is_side_at(pos as i8, piece.side) {
+                                control[pos] += sign*KNIGHT_ATTACK;
+                            }
+                        }
+                        if sq/8 > 0 && sq % 8 < 6 {
+                            let pos = (sq - 1*8 + 2) as usize;
+                            if !self.is_piece_at(pos as i8) {
+                                control[pos] += sign*KNIGHT_CONTROL;
+                            }
+                            else if !self.is_side_at(pos as i8, piece.side) {
+                                control[pos] += sign*KNIGHT_ATTACK;
+                            }
+                        }
+                        if sq/8 < 6 && sq % 8 > 0 {
+                            let pos = (sq + 2*8 - 1) as usize;
+                            if !self.is_piece_at(pos as i8) {
+                                control[pos] += sign*KNIGHT_CONTROL;
+                            }
+                            else if !self.is_side_at(pos as i8, piece.side) {
+                                control[pos] += sign*KNIGHT_ATTACK;
+                            }
+                        }
+                        if sq/8 < 6 && sq % 8 < 7 {
+                            let pos = (sq + 2*8 + 1) as usize;
+                            if !self.is_piece_at(pos as i8) {
+                                control[pos] += sign*KNIGHT_CONTROL;
+                            }
+                            else if !self.is_side_at(pos as i8, piece.side) {
+                                control[pos] += sign*KNIGHT_ATTACK;
+                            }
+                        }
+                        if sq/8 < 7 && sq % 8 > 1 {
+                            let pos = (sq + 1*8 - 2) as usize;
+                            if !self.is_piece_at(pos as i8) {
+                                control[pos] += sign*KNIGHT_CONTROL;
+                            }
+                            else if !self.is_side_at(pos as i8, piece.side) {
+                                control[pos] += sign*KNIGHT_ATTACK;
+                            }
+                        }
+                        if sq/8 < 7 && sq % 8 < 6 {
+                            let pos = (sq + 1*8 + 2) as usize;
+                            if !self.is_piece_at(pos as i8) {
+                                control[pos] += sign*KNIGHT_CONTROL;
+                            }
+                            else if !self.is_side_at(pos as i8, piece.side) {
+                                control[pos] += sign*KNIGHT_ATTACK;
+                            }
+                        }
+                        
+                    },
+                    PieceKind::Pawn => {
+                        
+                        // Control exerted by a pawn
+                        if piece.side == Side::White {
+                            if sq/8 > 0 { 
+                                // capture to the left
+                                if sq%8 > 0 {
+                                    control[(sq - 9) as usize] += sign*PAWN_CONTROL;
                                 }
-                                break;
-                            }
-                            control[pos as usize] += sign*QUEEN_CONTROL_DIAGONAL;
-                        }
-                    }
-                    
 
-                    let directions: [i8; 4] = [-1,1,8,-8];
-
-                    for d in directions {
-                        let mut pos: i8 = sq;
-                        loop { 
-                            pos += d;
-                            if (pos/8 != sq/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
-                                break;
-                            }
-                            else if self.is_piece_at(pos) {
-                                if !self.is_side_at(pos, piece.side) {
-                                    control[pos as usize] += sign*QUEEN_ATTACK_STRAIGHT;
+                                // capture to the right
+                                if sq%8 < 7 {
+                                    control[(sq - 7) as usize] += sign*PAWN_CONTROL;
                                 }
-                                break;
                             }
-                            control[pos as usize] += sign*QUEEN_CONTROL_STRAIGHT;
                         }
-                    }
-                },
-                PieceKind::Rook => {
-
-                    // Control exerted by a rook
-                    let directions: [i8; 4] = [-1,1,8,-8];
-                    for d in directions {
-                        let mut pos: i8 = sq;
-                        loop { 
-                            pos += d;
-                            if (pos/8 != sq/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
-                                break;
-                            }
-                            else if self.is_piece_at(pos) {
-                                if !self.is_side_at(pos, piece.side) {
-                                    control[pos as usize] += sign*ROOK_ATTACK;
+                        else {
+                            if sq/8 < 7 { 
+                                // capture to the left
+                                if sq%8 > 0 {
+                                    control[(sq + 7) as usize] += sign*PAWN_CONTROL;
                                 }
-                                break;
-                            }
-                            control[pos as usize] += sign*ROOK_CONTROL;
-                        }
-                    }
-                },
-                PieceKind::Bishop => {
 
-                    // Control exerted by a bishop
-                    let directions: [i8; 4] = [-9,-7,7,9];
-                    for d in directions {
-                        let mut pos: i8 = sq;
-                        loop { 
-                            if d == -9 && (pos < 8 || pos%8 == 0) {
-                                break;
-                            }
-                            else if d == -7 && (pos < 8 || pos%8 == 7) {
-                                break;
-                            }
-                            else if d == 9 && (pos > 55 || pos%8 == 7) {
-                                break;
-                            }
-                            else if d == 7 && (pos > 55 || pos%8 == 0) {
-                                break;
-                            }
-                            else {
-                                pos += d;
-                            }
-
-                            if self.is_piece_at(pos) {
-                                if !self.is_side_at(pos, piece.side) {
-                                    control[pos as usize] += sign*BISHOP_ATTACK;
+                                // capture to the right
+                                if sq%8 < 7 {
+                                    control[(sq + 9) as usize] += sign*PAWN_CONTROL;
                                 }
-                                break;
                             }
-                            control[pos as usize] += sign*BISHOP_CONTROL;
-                        }
-                    }
-        
-                },
-                PieceKind::Knight => {
+                        }    
 
-                    // "a knight on the rim is dim"
-                    let v: f64 = (sq%8) as f64;
-                    res += sign*((7.*v - v*v).sqrt())*KNIGHT_SIDE;
-                    
-                    // Control exerted by a knight, 
-                    // this is some silly code and can for sure be written more cleanly
-                    if sq/8 > 1 && sq % 8 > 0 {
-                        let pos = (sq - 2*8 - 1) as usize;
-                        if !self.is_piece_at(pos as i8) {
-                            control[pos] += sign*KNIGHT_CONTROL;
-                        }
-                        else if !self.is_side_at(pos as i8, piece.side) {
-                            control[pos] += sign*KNIGHT_ATTACK;
-                        }
-                    }
-                    if sq/8 > 1 && sq % 8 < 7 {
-                        let pos = (sq - 2*8 + 1) as usize;
-                        if !self.is_piece_at(pos as i8) {
-                            control[pos] += sign*KNIGHT_CONTROL;
-                        }
-                        else if !self.is_side_at(pos as i8, piece.side) {
-                            control[pos] += sign*KNIGHT_ATTACK;
-                        }
-                    }
-                    if sq/8 > 0 && sq % 8 > 1 {
-                        let pos = (sq - 1*8 - 2) as usize;
-                        if !self.is_piece_at(pos as i8) {
-                            control[pos] += sign*KNIGHT_CONTROL;
-                        }
-                        else if !self.is_side_at(pos as i8, piece.side) {
-                            control[pos] += sign*KNIGHT_ATTACK;
-                        }
-                    }
-                    if sq/8 > 0 && sq % 8 < 6 {
-                        let pos = (sq - 1*8 + 2) as usize;
-                        if !self.is_piece_at(pos as i8) {
-                            control[pos] += sign*KNIGHT_CONTROL;
-                        }
-                        else if !self.is_side_at(pos as i8, piece.side) {
-                            control[pos] += sign*KNIGHT_ATTACK;
-                        }
-                    }
-                    if sq/8 < 6 && sq % 8 > 0 {
-                        let pos = (sq + 2*8 - 1) as usize;
-                        if !self.is_piece_at(pos as i8) {
-                            control[pos] += sign*KNIGHT_CONTROL;
-                        }
-                        else if !self.is_side_at(pos as i8, piece.side) {
-                            control[pos] += sign*KNIGHT_ATTACK;
-                        }
-                    }
-                    if sq/8 < 6 && sq % 8 < 7 {
-                        let pos = (sq + 2*8 + 1) as usize;
-                        if !self.is_piece_at(pos as i8) {
-                            control[pos] += sign*KNIGHT_CONTROL;
-                        }
-                        else if !self.is_side_at(pos as i8, piece.side) {
-                            control[pos] += sign*KNIGHT_ATTACK;
-                        }
-                    }
-                    if sq/8 < 7 && sq % 8 > 1 {
-                        let pos = (sq + 1*8 - 2) as usize;
-                        if !self.is_piece_at(pos as i8) {
-                            control[pos] += sign*KNIGHT_CONTROL;
-                        }
-                        else if !self.is_side_at(pos as i8, piece.side) {
-                            control[pos] += sign*KNIGHT_ATTACK;
-                        }
-                    }
-                    if sq/8 < 7 && sq % 8 < 6 {
-                        let pos = (sq + 1*8 + 2) as usize;
-                        if !self.is_piece_at(pos as i8) {
-                            control[pos] += sign*KNIGHT_CONTROL;
-                        }
-                        else if !self.is_side_at(pos as i8, piece.side) {
-                            control[pos] += sign*KNIGHT_ATTACK;
-                        }
-                    }
-                    
-                },
-                PieceKind::Pawn => {
+                        // a pawn is worth more the further advanced it is
+                        let advancement = match piece.side {
+                            Side::White => (6 - sq / 8).max(0),
+                            Side::Black => (sq / 8 - 1).max(0),
+                        };
 
-                    
-                    // Control exerted by a pawn
-                    if piece.side == Side::White {
-                        if sq/8 > 0 { 
-                            // capture to the left
-                            if sq%8 > 0 {
-                                control[(sq - 9) as usize] += sign*PAWN_CONTROL;
-                            }
+                        res += sign * (advancement as f64) * PAWN_ADVANCE;
 
-                            // capture to the right
-                            if sq%8 < 7 {
-                                control[(sq - 7) as usize] += sign*PAWN_CONTROL;
-                            }
-                        }
-                    }
-                    else {
-                        if sq/8 < 7 { 
-                            // capture to the left
-                            if sq%8 > 0 {
-                                control[(sq + 7) as usize] += sign*PAWN_CONTROL;
-                            }
-
-                            // capture to the right
-                            if sq%8 < 7 {
-                                control[(sq + 9) as usize] += sign*PAWN_CONTROL;
-                            }
-                        }
-                    }
-                    
-
-                    // a pawn is worth more the further advanced it is
-                    let advancement = match piece.side {
-                        Side::White => (6 - sq / 8).max(0),
-                        Side::Black => (sq / 8 - 1).max(0),
-                    };
-
-                    res += sign * (advancement as f64) * PAWN_ADVANCE;
-
-                    // pawn structure condiderations
-                },
+                        // pawn structure condiderations
+                    },
+                }
             }
-
         }
+
         
         // calculating the net influence, with respect to some positional considerations
         for i in 0..64 {
@@ -393,7 +391,7 @@ impl BoardState {
     }
 }
 
-// this encourages the control to be different 
+// this encourages the control to be different [FIXED]
 fn control_to_eval(control: f64) -> f64 {
     return control.signum()*INFLUENCE_COEFF*control.abs().powf(INFLUENCE_EXPONENT);
 }
