@@ -8,7 +8,7 @@ use crate::chess::{
 
 const CONFIDENCE_WEIGHT: f64 = 10_000.;
 const MAX_CONFIDENCE: f64 = 0.4;
-const ROLLOUT_DEPTH: usize = 2;
+const ROLLOUT_DEPTH: usize = 1;
 const C: f64 = 1.3;
 
 pub struct AnalysisTree {
@@ -118,7 +118,7 @@ impl AnalysisNode {
 
     // returns the combined evaluation from the minimax search and the MC mean
     pub fn combined_value(&self) -> f64 {
-        let mean = self.get_value();
+        let mean = self.total_value / self.visits as f64;
         let minimax = self.minimax_value.unwrap_or(mean);
 
         let confidence = MAX_CONFIDENCE * self.visits as f64 / (self.visits as f64 + CONFIDENCE_WEIGHT);
@@ -186,19 +186,21 @@ impl AnalysisNode {
 
     // initializes the children of a node
     pub fn initialize_children(&mut self, board_state: &mut BoardState) {
-        let legal_moves = board_state.get_legal_moves();
+        let legal_move_list = board_state.get_legal_moves();
 
         self.children = Vec::<AnalysisNode>::new();
 
-        for m in legal_moves {
+        for m in legal_move_list {
+
             self.children.push(
                 AnalysisNode { children: Vec::<AnalysisNode>::new(), 
-                               visits: 0, 
-                               total_value: 0., 
-                               minimax_value: None,
-                               m: m,
-                               s: self.s.opposite(),
+                            visits: 0, 
+                            total_value: 0., 
+                            minimax_value: None,
+                            m: m.chess_move,
+                            s: self.s.opposite(),
             });
+            
         }
     }  
 
@@ -299,10 +301,16 @@ impl AnalysisNode {
 // a simple alpha - beta pruning way of doing minimax
 pub fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut beta: f64) -> f64 {
 
-    // first check for a terminal state
-    let mut legal_moves = board_state.get_legal_moves();
 
-    if legal_moves.len() == 0 {
+    // check if we have reached the recursion bottom
+    if depth == 0 {
+        return board_state.evaluation();
+    }
+
+    // then check for a terminal state
+    let mut legal_move_list = board_state.get_legal_moves();
+
+    if legal_move_list.len() == 0 {
         if board_state.is_in_check(board_state.side_to_move) {
             return match board_state.side_to_move {
                 Side::White => -10_000. - depth as f64,
@@ -314,11 +322,6 @@ pub fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut b
         }
     }
 
-    // next we check if we have reached the recursion bottom
-    if depth == 0 {
-        return board_state.evaluation();
-    }
-
     // if we are at a maximizing node (white to move) 
     if board_state.side_to_move == Side::White {
 
@@ -326,12 +329,11 @@ pub fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut b
         let mut value = -INFINITY;
 
         // then make each legal move one by one
-        legal_moves.sort_by(|m1, m2| board_state.priority(m2).total_cmp(&board_state.priority(m1)));
+        legal_move_list.as_mut_slice().sort_unstable_by_key(|entry| std::cmp::Reverse(entry.score));
 
-        for m in legal_moves {
-            //let mut temp_board = board_state.clone();
-            //temp_board.apply_move_unchecked(&m);
-            let un_move = board_state.apply_move_unchecked(&m);
+        for m in legal_move_list {
+            
+            let un_move = board_state.apply_move_unchecked(&m.chess_move);
 
             // check if we beat value
             value = value.max(minimax(board_state, depth - 1, alpha, beta));
@@ -340,7 +342,8 @@ pub fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut b
 
             let restored = board_state.un_move_unchecked(un_move);
 
-            debug_assert!(restored,"Failed to restore board during minimax");
+            assert!(restored,"Failed to restore board during minimax");
+            //board_state.assert_cached_state();
         
             if value >= beta {
                 // in this case, we have evidence that we already know the optimal value
@@ -348,6 +351,7 @@ pub fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut b
             }
 
             alpha = alpha.max(value);
+        
         }
         return value;
     }
@@ -357,25 +361,27 @@ pub fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut b
         let mut value = INFINITY;
 
         // then make each legal move one by one
-        legal_moves.sort_by(|m1, m2| board_state.priority(m2).total_cmp(&board_state.priority(m1)));
+        legal_move_list.as_mut_slice().sort_unstable_by_key(|entry| std::cmp::Reverse(entry.score));
 
-        for m in legal_moves {
-            //let mut temp_board = board_state.clone();
-            //temp_board.apply_move_unchecked(&m);
-            let un_move = board_state.apply_move_unchecked(&m);
+        for m in legal_move_list {
+
+            let un_move = board_state.apply_move_unchecked(&m.chess_move);
 
             // check if we beat value
             value = value.min(minimax(board_state, depth - 1, alpha, beta));
 
             // unmake the move before anything else 
-            board_state.un_move_unchecked(un_move);
-
+            let restored = board_state.un_move_unchecked(un_move);
+            assert!(restored, "Failed to restore board during minimax");
+            //board_state.assert_cached_state();
+            
             if value <= alpha {
                 // in this case, we have evidence that we already know the optimal value
                 break;
             }
 
             beta = beta.min(value);
+            
         }
         return value;
     }
@@ -391,5 +397,6 @@ fn eval_to_mc(evaluation: f64) -> f64 {
 } 
 
 fn mc_to_eval(mc: f64) -> f64 {
-    return -(2./(1. + mc) - 1.).ln()*NORMALIZATION;
-} 
+    let mc = mc.clamp(-1.0 + f64::EPSILON, 1.0 - f64::EPSILON);
+    -((2.0 / (1.0 + mc)) - 1.0).ln() * NORMALIZATION
+}

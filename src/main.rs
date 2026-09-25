@@ -97,6 +97,10 @@ async fn main() {
                                                  black_short_castle: true,
                                                  black_long_castle: true,
                                                  en_passant: None,
+                                                 white_king: 60,
+                                                 black_king: 4,
+                                                 material: 0.,
+                                                 total_pieces: 32,
                                                 };
     
     /*
@@ -503,14 +507,15 @@ fn perft(board: &mut BoardState, depth: u32) -> u64 {
     let legal_moves = board.get_legal_moves();
     let mut nodes = 0;
 
-    for chess_move in legal_moves {
-        let unmove = board.apply_move_unchecked(&chess_move);
+    for scored_move in legal_moves {
+
+        let unmove = board.apply_move_unchecked(&scored_move.chess_move);
 
         nodes += perft(board, depth - 1);
         assert!(
             board.un_move_unchecked(unmove),
             "Failed to unmake move: {:?}",
-            chess_move
+            scored_move
         );
     }
     nodes
@@ -525,6 +530,10 @@ fn kiwipete() -> BoardState {
         black_short_castle: true,
         black_long_castle: true,
         en_passant: None,
+        white_king: 60,
+        black_king: 4,
+        material: 0.,
+        total_pieces: 32,
     };
 
     // pieces for white
