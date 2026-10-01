@@ -6,10 +6,12 @@ use crate::chess::{
     Side,
 };
 
-const CONFIDENCE_WEIGHT: f64 = 10_000.;
-const MAX_CONFIDENCE: f64 = 0.4;
-const ROLLOUT_DEPTH: usize = 1;
-const C: f64 = 1.3;
+const CONFIDENCE_WEIGHT: f64 = 300_000.;
+const MAX_CONFIDENCE: f64 = 0.7;
+const ROLLOUT_DEPTH: usize = 0;
+const UPDATE_DELAY: usize = 500;
+const DEPTH_THRESHOLD: usize = 1_500;
+const C: f64 = 1.25;
 
 pub struct AnalysisTree {
     pub root: AnalysisNode,
@@ -23,6 +25,8 @@ impl AnalysisTree {
     pub fn reset(&mut self) {
         self.root = AnalysisNode { 
             children: Vec::<AnalysisNode>::new(),
+            expanded: false,
+            solved: None,
             visits: 0, 
             total_value: 0., 
             minimax_value: None,
@@ -36,7 +40,7 @@ impl AnalysisTree {
     // traverse down the tree
     pub fn traverse(&mut self) {
         // Traverse the tree using a copy of the current board
-        self.root.traverse(&mut self.board_state_backup.clone());
+        self.root.traverse(&mut self.board_state_backup);
     } 
 
     // make a custom move and update the tree accordingly
@@ -62,6 +66,8 @@ impl AnalysisTree {
         }
         else {
             self.root = AnalysisNode { children: Vec::<AnalysisNode>::new(), 
+                                        expanded: false,
+                                        solved: None,
                                         visits: 0, 
                                         total_value: 0., 
                                         minimax_value: None,
@@ -97,6 +103,8 @@ impl AnalysisTree {
 
 pub struct AnalysisNode {
     pub children: Vec<AnalysisNode>,
+    pub expanded: bool,
+    pub solved: Option<Side>,
     pub visits: usize,
     pub total_value: f64,
     pub minimax_value: Option<f64>,
@@ -105,6 +113,19 @@ pub struct AnalysisNode {
 }
 
 impl AnalysisNode {
+
+    // returns a proxy for how deep the analysis has gone
+    pub fn get_depth(&self) -> usize {
+        if self.visits > DEPTH_THRESHOLD {
+            if let Some(index) = self.get_best_move() {
+                return 1 + self.children[index].get_depth();
+            }
+            else {
+                return 1;
+            }
+        }
+        return 1 + ROLLOUT_DEPTH;
+    }
 
     // returns the average value from the current traversals
     pub fn get_value(&self) -> f64 {
@@ -129,18 +150,31 @@ impl AnalysisNode {
     // returns the index of the promising child so far if there is one
     pub fn get_best_move(&self) -> Option<usize> {
 
-        let mut highscore: usize = 0; 
-        let mut winner: Option<usize> = None;
-
-        for index in 0..self.children.len() {
-
-            if self.children[index].visits >= highscore {
-                highscore = self.children[index].visits;
-                winner = Some(index);
+        match self.s {
+            Side::White => {
+                self.children
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_,c_1),(_,c_2)| {
+                        c_1.combined_value().total_cmp(&c_2.combined_value())
+                    })
+                    .map(|(index, _)| {
+                        index
+                    })
+            }
+            Side::Black => {
+                self.children
+                    .iter()
+                    .enumerate()
+                    .min_by(|(_,c_1),(_,c_2)| {
+                        c_1.combined_value().total_cmp(&c_2.combined_value())
+                    })
+                    .map(|(index, _)| {
+                        index
+                    })
             }
         }
-
-        return winner;
+            
     }
 
     // returns the index of the child with the best UCB_1 evaluation, if there is one (ties are handled poorly)
@@ -186,14 +220,19 @@ impl AnalysisNode {
 
     // initializes the children of a node
     pub fn initialize_children(&mut self, board_state: &mut BoardState) {
+
+        assert!(!self.expanded, "Tried to expand an expanded node");
+
         let legal_move_list = board_state.get_legal_moves();
 
-        self.children = Vec::<AnalysisNode>::new();
+        self.children = Vec::with_capacity(legal_move_list.len());
 
         for m in legal_move_list {
 
             self.children.push(
-                AnalysisNode { children: Vec::<AnalysisNode>::new(), 
+                AnalysisNode { children: Vec::<AnalysisNode>::new(),
+                            expanded: false, 
+                            solved: None,
                             visits: 0, 
                             total_value: 0., 
                             minimax_value: None,
@@ -211,70 +250,72 @@ impl AnalysisNode {
 
     // makes one traversal down and updates the information in each node
     pub fn traverse(&mut self, board_state: &mut BoardState) -> f64 {
-        
-        if self.children.len() == 0 {
-            // this is a leaf
-            if self.visits == 0 {
-                // and with zero visits, then
-                self.visits += 1;
-                let rollout_result: f64 = self.rollout(board_state);
-                self.total_value += rollout_result;
-                self.minimax_value = Some(rollout_result);
-                return rollout_result;
-            }
-            else {
-                // if we have visited this already, 
-                // then we should give children if it is the first revisit:
-                if self.visits == 1 {
-                    self.initialize_children(board_state);
-                }
 
-                // check for a terminal state
-                if self.children.len() == 0 {
-                    self.visits += 1;
+        // On the first viset we evaluate without generating moves
+        if self.visits == 0 {
+            let result = self.rollout(board_state);
 
-                    if board_state.is_in_check(Side::White) {
-                        self.total_value += -1.;
-                        return -1.;
-                    }
-                    else if board_state.is_in_check(Side::Black) {
-                        self.total_value += 1.;
-                        return 1.
-                    }
-                    else {
-                        return 0.;
-                    }
-                }
-                else {
-                    // and if this is not a terminal state, 
-                    // then at this point there are children in the node, 
-                    // so we can continue the recursion:
-                    return self.traverse(board_state);
-                }
-
-            }
-        }
-        else {
-            // if there are children, then first we have to choose the ucb child
-            let index: usize = self.ucb_child().expect("There was no index in traverse!");
-
-            // apply the child's move to the board
-            board_state.apply_move_unchecked(&self.children[index].m);
-
-            // then go deeper
-            let result = self.children[index].traverse(board_state);
-
-            // having the result, we are ready to back propagate:
-            self.visits += 1;
-            self.total_value += result;
-            self.update_minimax_value();
+            self.visits = 1;
+            self.total_value = result;
+            self.minimax_value = Some(result);
 
             return result;
-
         }
 
+        // On the second visit, we expand the node
+        if !self.expanded {
+            self.initialize_children(board_state);
+            self.expanded = true;
 
+            // No legal moves means checkmate or stalemate
+            if self.children.is_empty() {
+                let result =
+                    if board_state.is_in_check(board_state.side_to_move) {
+                        match board_state.side_to_move {
+                            Side::White => -1.0,
+                            Side::Black => 1.0,
+                        }
+                    } else {
+                        0.0
+                    };
+
+                self.visits += 1;
+                self.total_value += result;
+                self.minimax_value = Some(result);
+
+                return result;
+            }
+        }
+
+        // An already-expanded terminal node
+        if self.children.is_empty() {
+            let result = self.minimax_value.unwrap_or(0.0);
+
+            self.visits += 1;
+            self.total_value += result;
+
+            return result;
+        }
+
+        let index = self.ucb_child().expect("Expanded nonterminal node has no child");
+
+        let un_move = board_state.apply_move_unchecked(
+            &self.children[index].m,
+        );
+
+        let result = self.children[index].traverse(board_state);
+
+        board_state.un_move_unchecked(un_move);
+
+        self.visits += 1;
+        self.total_value += result;
+        if self.visits % UPDATE_DELAY == 0 {
+            self.update_minimax_value();
+        }
+    
+        return result;
     }
+    
 
     fn update_minimax_value(&mut self) {
         let child_values = self
@@ -387,8 +428,6 @@ pub fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut b
     }
 
 }
-
-
 
 const NORMALIZATION: f64 = 12.;
 // returns a value normalizes between -1 and 1, given an evaluation

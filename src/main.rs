@@ -105,20 +105,20 @@ async fn main() {
     
     /*
     board_state = kiwipete();
-
-    for i in 0..6 {
-        println!("Number of legal moves at depth {}: {}", i, perft(&mut board_state, i))
-    }
     */
-    
 
     board_state.to_starting_position();
+    for i in 0..0 {
+        println!("Number of legal moves at depth {}: {}", i, perft(&mut board_state, i))
+    }
 
 
     // the initial analysis tree
     let mut analysis_tree = AnalysisTree{
         root: AnalysisNode{
             children: Vec::<AnalysisNode>::new(),
+            expanded: false,
+            solved: None,
             visits: 0,
             total_value: 0.,
             minimax_value: None,
@@ -469,14 +469,20 @@ async fn main() {
         // showing the evaluation if it is to be shown
         if buttons["evaluation"].text != "Show evaluation".to_string() {
             if let Some(m) = analysis_tree.get_best_move() {
-                buttons.get_mut("evaluation").expect("No evaluation button").text = m.to_text() + " : " + &((analysis_tree.root.get_value()*100.).round()/100.).to_string();
+                buttons.get_mut("evaluation").expect("No evaluation button").text = 
+                    m.to_text() + 
+                    " : " + 
+                    &((analysis_tree.root.get_value()*100.).round()/100.).to_string() + 
+                    " ( " + 
+                    &analysis_tree.root.get_depth().to_string() +  
+                    " )";
             }
             else {
                 buttons.get_mut("evaluation").expect("No evaluation button").text = " -- ".to_string();
             }
         } 
 
-        // showinng the result of the game if there are no legal moves left
+        // showing the result of the game if there are no legal moves left
         if board_state.get_legal_moves().len() == 0 {
             buttons.get_mut("result window").expect("No result window").visible = true;
 
@@ -521,6 +527,7 @@ fn perft(board: &mut BoardState, depth: u32) -> u64 {
     nodes
 }
 
+/*
 fn kiwipete() -> BoardState {
     let mut res: BoardState = BoardState {
         piece_arr: [None; 64],
@@ -575,7 +582,7 @@ fn kiwipete() -> BoardState {
     return res
 }
 
-
+*/
 
 // Drawing on the screen
 
@@ -774,7 +781,7 @@ impl Button{
             else {
                 draw_text(
                     &self.text,
-                    corner_x + self.width/6.,
+                    corner_x + self.width/12.,
                     corner_y + self.height/2. + dimensions.height/3.,
                     self.text_size as f32,
                     self.text_color,

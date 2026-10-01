@@ -1,7 +1,7 @@
 const MAX_MOVES: usize = 230;
 use arrayvec::ArrayVec;
+
 pub type MoveList = ArrayVec<ScoredMove, MAX_MOVES>;
-pub type PinList = ArrayVec<Pin, 8>;
 
 mod evaluation;
 
@@ -27,7 +27,6 @@ impl BoardState {
     // Applies a move without checking for legality. 
     // The caller must guarantee that a move is indeed legal before calling
     // Returns the information needed to retur to the previous board state
-    // [FIXED]
     pub fn apply_move_unchecked(&mut self, m: &Move) -> UnMove {
 
         // before making the move, we record the current state
@@ -285,244 +284,27 @@ impl BoardState {
 
     // returns all the legal moves in the current BoardState [FIXED, but can be optimized quite a lot]
     pub fn get_legal_moves(&mut self) -> MoveList {
+        
         let mut res = MoveList::new();
-
-
-        /*
-        // first we determine pinning vectors and possible checks
-        // these store a position and the direction
-        let mut pins = PinList::new();
-        let mut check_count: u8 = 0;
-
-        // the directions of a rook:
-        let directions: [i8; 4] = [-1,1,8,-8];
-
-        let king_pos =  match self.side_to_move {
-            Side::White => self.white_king, 
-            Side::Black => self.black_king,
-        };
-
-        let side = self.side_to_move;
-        let opposite = side.opposite();
-
-        for d in directions {
-
-            let mut pos: i8 = king_pos;
-            let mut found_friendly: bool = false;
-            let mut friendly_square = -1;
-
-            loop { 
-                pos += d;
-                if (pos/8 != king_pos/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
-                    break;
-                }
-                
-                if self.is_side_at(pos, side) {
-                    if found_friendly {
-                        break;
-                    }
-                    else {
-                        found_friendly = true;
-                        friendly_square = pos;
-                    }
-                }
-
-                if self.is_side_at(pos, opposite) {
-                    if self.is_kind_at(pos, PieceKind::Rook) || self.is_kind_at(pos, PieceKind::Queen) {
-                        if found_friendly {
-                            pins.push(Pin {pinned_square: friendly_square, pinner_square: pos, direction: d } );
-                        }
-                        else {
-                            check_count += 1;
-                        }   
-                    }
-                    break;
-                }
-            }
-        }
-
-        // the directions of a bishop
-        let directions: [i8; 4] = [-9,-7,7,9];
-
-        for d in directions {
-
-            let mut pos: i8 = king_pos;
-            let mut found_friendly: bool = false;
-            let mut friendly_square = -1;
-            
-            loop { 
-                if d == -9 && (pos < 8 || pos%8 == 0) {
-                    break;
-                }
-                else if d == -7 && (pos < 8 || pos%8 == 7) {
-                    break;
-                }
-                else if d == 9 && (pos > 55 || pos%8 == 7) {
-                    break;
-                }
-                else if d == 7 && (pos > 55 || pos%8 == 0) {
-                    break;
-                }
-                else {
-                    pos += d;
-                }
-
-                if self.is_side_at(pos, side) {
-                    if found_friendly {
-                        break;
-                    }
-                    else {
-                        found_friendly = true;
-                        friendly_square = pos;
-                    }
-                }
-
-                if self.is_side_at(pos, opposite) {
-                    if self.is_kind_at(pos, PieceKind::Bishop) || 
-                        self.is_kind_at(pos, PieceKind::Queen) ||
-                        self.is_kind_at(pos, PieceKind::Pawn) && 
-                        match side { 
-                            Side::White => {
-                                pos == king_pos + d && (d == -9 && king_pos%8 > 0 || d == -7 && king_pos%8 < 7)
-                            }, 
-                            Side::Black => {
-                                pos == king_pos + d && (d == 7 && king_pos%8 > 0 || d == 9 && king_pos%8 < 7)
-                            }}
-                    {
-                        if found_friendly {
-                            pins.push(Pin {pinned_square: friendly_square, pinner_square: pos, direction: d } );
-                        }
-                        else {
-                            check_count += 1;
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-        
-        // looking for checks from knights
-        if king_pos/8 > 1 && king_pos % 8 > 0 {
-            let knight_pos = king_pos - 2*8 - 1;
-            if self.is_kind_at(knight_pos, PieceKind::Knight) && self.is_side_at(knight_pos, opposite) {
-                check_count += 1;
-            }
-        }
-        if king_pos/8 > 1 && king_pos % 8 < 7 {
-            let knight_pos = king_pos - 2*8 + 1;
-            if self.is_kind_at(knight_pos, PieceKind::Knight) && self.is_side_at(knight_pos, opposite) {
-                check_count += 1;
-            }
-        }
-        if king_pos/8 > 0 && king_pos % 8 > 1 {
-            let knight_pos = king_pos - 1*8 - 2;
-            if self.is_kind_at(knight_pos, PieceKind::Knight) && self.is_side_at(knight_pos, opposite) {
-                check_count += 1;
-            }
-        }
-        if king_pos/8 > 0 && king_pos % 8 < 6 {
-            let knight_pos = king_pos - 1*8 + 2;
-            if self.is_kind_at(knight_pos, PieceKind::Knight) && self.is_side_at(knight_pos, opposite) {
-                check_count += 1;
-            }
-        }
-        if king_pos/8 < 6 && king_pos % 8 > 0 {
-            let knight_pos = king_pos + 2*8 - 1;
-            if self.is_kind_at(knight_pos, PieceKind::Knight) && self.is_side_at(knight_pos, opposite) {
-                check_count += 1;
-            }
-        }
-        if king_pos/8 < 6 && king_pos % 8 < 7 {
-            let knight_pos = king_pos + 2*8 + 1;
-            if self.is_kind_at(knight_pos, PieceKind::Knight) && self.is_side_at(knight_pos, opposite) {
-                check_count += 1;
-            }
-        }
-        if king_pos/8 < 7 && king_pos % 8 > 1 {
-            let knight_pos = king_pos + 1*8 - 2;
-            if self.is_kind_at(knight_pos, PieceKind::Knight) && self.is_side_at(knight_pos, opposite) {
-                check_count += 1;
-            }
-        }
-        if king_pos/8 < 7 && king_pos % 8 < 6 {
-            let knight_pos = king_pos + 1*8 + 2;
-            if self.is_kind_at(knight_pos, PieceKind::Knight) && self.is_side_at(knight_pos, opposite) {
-                check_count += 1;
-            }
-        }
-
-        
-
-        // having determined all the pins, we can now determine legality of moves without 
-        // resorting to applying the moves and looking at the king being in check
-        
-        // we now look at legal moves by how many checks there are above
-        if check_count == 2 {
-            // this means that we are in a double check, so only a regular king move is possible
-
-        }
-        
-        */
-
-
-
-
-
         for i in 0..64 {
             if let Some(piece) = self.piece_arr[i] {
                 if piece.side == self.side_to_move {
                 
                     let sq = i as i8;
+                    let side = piece.side;
                     match piece.kind {
                         
                         PieceKind::King => {
                             // the moves on the immediate squares
-                            if sq % 8 > 0 && sq/8 > 0 && !self.is_side_at(sq - 9, self.side_to_move) {
-                                let m = Move::Standard(sq,sq - 9);
-                                if !self.results_in_check(m) {
-                                    res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                }
-                            }
-                            if sq/8 > 0 && !self.is_side_at(sq - 8, self.side_to_move) {
-                                let m = Move::Standard(sq,sq - 8);
-                                if !self.results_in_check(m) {
-                                    res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                }
-                            }
-                            if sq % 8 < 7 && sq/8 > 0 && !self.is_side_at(sq - 7, self.side_to_move) {
-                                let m = Move::Standard(sq,sq - 7);
-                                if !self.results_in_check(m) {
-                                    res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                }
-                            }
-                            if sq % 8 < 7 && !self.is_side_at(sq + 1, self.side_to_move) {
-                                let m = Move::Standard(sq,sq + 1);
-                                if !self.results_in_check(m) {
-                                    res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                }
-                            }
-                            if sq % 8 < 7 && sq/8 < 7 && !self.is_side_at(sq + 9, self.side_to_move) {
-                                let m = Move::Standard(sq,sq + 9);
-                                if !self.results_in_check(m) {
-                                    res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                }
-                            }
-                            if sq/8 < 7 && !self.is_side_at(sq + 8, self.side_to_move) {
-                                let m = Move::Standard(sq,sq + 8);
-                                if !self.results_in_check(m) {
-                                    res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                }
-                            }
-                            if sq % 8 > 0 && sq/8 < 7 && !self.is_side_at(sq + 7, self.side_to_move) {
-                                let m = Move::Standard(sq,sq + 7);
-                                if !self.results_in_check(m) {
-                                    res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                }
-                            }
-                            if sq % 8 > 0 && !self.is_side_at(sq - 1, self.side_to_move) {
-                                let m = Move::Standard(sq,sq - 1);
-                                if !self.results_in_check(m) {
-                                    res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                            let directions: [(i8,i8);8] = [(-1,-1), (-1,0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1)];
+                            for d in directions {
+                                if let Some(destination) = self.stays_in_bounds(sq, d) {
+                                    if !self.is_side_at(destination, side) {
+                                        let m = Move::Standard(sq,destination);
+                                        if !self.results_in_check(m) {
+                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                        }
+                                    }
                                 }
                             }
 
@@ -585,133 +367,66 @@ impl BoardState {
                         }, 
                         PieceKind::Queen => {
 
-                            // this piece can move on files and ranks until there is a collision
-                            let directions: [i8; 4] = [-1,1,8,-8];
-
+                            // the queen can slide in any of 8 directions
+                            let directions: [(i8,i8);8] = [(0,-1),(0,1),(-1,0),(1,0), (-1,-1),(-1,1),(1,-1),(1,1)];
                             for d in directions {
-                                let mut pos :i8 = sq;
-                                loop { 
-                                    pos += d;
-                                    if (pos/8 != sq/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
-                                        break;
-                                    }
-                                    else if self.is_piece_at(pos) {
-                                        if !self.is_side_at(pos, self.side_to_move) {
-                                            let m = Move::Standard(sq, pos);
-                                            if !self.results_in_check(m) {
-                                                res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                let mut pos: i8 = sq;
+                                loop {
+                                    if let Some(destination) = self.stays_in_bounds(pos, d) {
+                                        if self.is_piece_at(destination) {
+                                            if !self.is_side_at(destination, side) {
+                                                let m = Move::Standard(sq, destination);
+                                                if !self.results_in_check(m) {
+                                                    res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                }
                                             }
+                                            break;
                                         }
-                                        break;
-                                    }
-                                    let m = Move::Standard(sq,pos);
-                                    if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                    }
-                                }
-                            }
+                                        let m = Move::Standard(sq,destination);
+                                        if !self.results_in_check(m) {
+                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                        }
 
-                            // and also on diagonals until there is a collision
-                            let directions: [i8; 4] = [-9,-7,7,9];
-
-                            for d in directions {
-                                let mut pos :i8 = sq;
-                                loop { 
-                                    if d == -9 && (pos < 8 || pos%8 == 0) {
-                                        break;
-                                    }
-                                    else if d == -7 && (pos < 8 || pos%8 == 7) {
-                                        break;
-                                    }
-                                    else if d == 9 && (pos > 55 || pos%8 == 7) {
-                                        break;
-                                    }
-                                    else if d == 7 && (pos > 55 || pos%8 == 0) {
-                                        break;
+                                        pos = destination;
                                     }
                                     else {
-                                        pos += d;
-                                    }
-
-                                    if self.is_piece_at(pos) {
-                                        if !self.is_side_at(pos, self.side_to_move) {
-                                            let m = Move::Standard(sq, pos);
-                                            if !self.results_in_check(m) {
-                                                res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                            }
-                                        }
                                         break;
-                                    }
-                                    let m = Move::Standard(sq,pos);
-                                    if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
                                     }
                                 }
                             }
+                        }, 
+                        PieceKind::Rook |PieceKind::Bishop => {
                             
-                        }, 
-                        PieceKind::Rook => {
-                            // this piece can move on files and ranks until there is a collision
-                            let directions: [i8; 4] = [-1,1,8,-8];
-
-                            for d in directions {
-                                let mut pos :i8 = sq;
-                                loop { 
-                                    pos += d;
-                                    if (pos/8 != sq/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
-                                        break;
-                                    }
-                                    else if self.is_piece_at(pos) {
-                                        if !self.is_side_at(pos, self.side_to_move) {
-                                            let m = Move::Standard(sq, pos);
-                                            if !self.results_in_check(m) {
-                                                res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                            }
-                                        }
-                                        break;
-                                    }
-                                    let m = Move::Standard(sq,pos);
-                                    if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                    }
-                                }
+                            // the rook and bishop can slide in any of 4 directions
+                            let directions: [(i8,i8);4] = if piece.kind == PieceKind::Rook {
+                                [(0,-1),(0,1),(-1,0),(1,0)]
                             }
-                        }, 
-                        PieceKind::Bishop => {
-                            // this piece can move on diagonals until there is a collision
-                            let directions: [i8; 4] = [-9,-7,7,9];
-
+                            else {
+                                [(-1,-1),(-1,1),(1,-1),(1,1)]
+                            };
+                            
                             for d in directions {
-                                let mut pos :i8 = sq;
-                                loop { 
-                                    if d == -9 && (pos < 8 || pos%8 == 0) {
-                                        break;
-                                    }
-                                    else if d == -7 && (pos < 8 || pos%8 == 7) {
-                                        break;
-                                    }
-                                    else if d == 9 && (pos > 55 || pos%8 == 7) {
-                                        break;
-                                    }
-                                    else if d == 7 && (pos > 55 || pos%8 == 0) {
-                                        break;
+                                let mut pos: i8 = sq;
+                                loop {
+                                    if let Some(destination) = self.stays_in_bounds(pos, d) {
+                                        if self.is_piece_at(destination) {
+                                            if !self.is_side_at(destination, side) {
+                                                let m = Move::Standard(sq, destination);
+                                                if !self.results_in_check(m) {
+                                                    res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                }
+                                            }
+                                            break;
+                                        }
+                                        let m = Move::Standard(sq,destination);
+                                        if !self.results_in_check(m) {
+                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                        }
+
+                                        pos = destination;
                                     }
                                     else {
-                                        pos += d;
-                                    }
-
-                                    if self.is_piece_at(pos) {
-                                        if !self.is_side_at(pos, self.side_to_move) {
-                                            let m = Move::Standard(sq, pos);
-                                            if !self.results_in_check(m) {
-                                                res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                            }
-                                        }
                                         break;
-                                    }
-                                    let m = Move::Standard(sq,pos);
-                                    if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
                                     }
                                 }
                             }
@@ -719,292 +434,94 @@ impl BoardState {
                         PieceKind::Knight => {
 
                             // this piece can only move in L-shapes
-                            if sq/8 > 1 && sq % 8 > 0 {
-                                if !self.is_side_at(sq - 2*8 - 1, self.side_to_move) {
-                                    let m = Move::Standard(sq, sq - 2*8 - 1);
-                                    if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                    }
-                                }
-                            }
-                            if sq/8 > 1 && sq % 8 < 7 {
-                                if !self.is_side_at(sq - 2*8 + 1, self.side_to_move) {
-                                    let m = Move::Standard(sq, sq - 2*8 + 1);
-                                    if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                    }
-                                }
-                            }
-                            if sq/8 > 0 && sq % 8 > 1 {
-                                if !self.is_side_at(sq - 1*8 - 2, self.side_to_move) {
-                                    let m = Move::Standard(sq, sq - 1*8 - 2);
-                                    if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                    }
-                                }
-                            }
-                            if sq/8 > 0 && sq % 8 < 6 {
-                                if !self.is_side_at(sq - 1*8 + 2, self.side_to_move) {
-                                    let m = Move::Standard(sq, sq - 1*8 + 2);
-                                    if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                    }
-                                }
-                            }
-                            if sq/8 < 6 && sq % 8 > 0 {
-                                if !self.is_side_at(sq + 2*8 - 1, self.side_to_move) {
-                                    let m = Move::Standard(sq, sq + 2*8 - 1);
-                                    if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                    }
-                                }
-                            }
-                            if sq/8 < 6 && sq % 8 < 7 {
-                                if !self.is_side_at(sq + 2*8 + 1, self.side_to_move) {
-                                    let m = Move::Standard(sq, sq + 2*8 + 1);
-                                    if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                    }
-                                }
-                            }
-                            if sq/8 < 7 && sq % 8 > 1 {
-                                if !self.is_side_at(sq + 1*8 - 2, self.side_to_move) {
-                                    let m = Move::Standard(sq, sq + 1*8 - 2);
-                                    if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                    }
-                                }
-                            }
-                            if sq/8 < 7 && sq % 8 < 6 {
-                                if !self.is_side_at(sq + 1*8 + 2, self.side_to_move) {
-                                    let m = Move::Standard(sq, sq + 1*8 + 2);
-                                    if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                            let directions: [(i8,i8);8] = [(-2,-1), (-2,1), (-1,-2), (-1,2), (2,-1), (2,1), (1,-2), (1,2)];
+                            for d in directions {
+                                if let Some(destination) = self.stays_in_bounds(sq, d) {
+                                    if !self.is_side_at(destination, side) {
+                                        let m = Move::Standard(sq,destination);
+                                        if !self.results_in_check(m) {
+                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                        }
                                     }
                                 }
                             }
                         }, 
                         PieceKind::Pawn => {
-                            
-                            if self.side_to_move == Side::White {
 
-                                // not promoting
-                                if sq/8 > 1 { 
-                                    // one step forward
-                                    if !self.is_piece_at(sq - 8) {
-                                        let m = Move::Standard(sq, sq - 8);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                            // first we find the direction in which a pawn moves
+                            let dir: i8 = match side {
+                                Side::White => -1,
+                                Side::Black => 1
+                            };
+
+                            // thus the possible (non-enpassant) displacements are
+                            let displacements = [(dir,-1), (dir,0), (dir,1), (2*dir,0)];                                
+                            // now we have to handle the various cases
+                            for d in displacements {
+                                if let Some(destination) = self.stays_in_bounds(sq, d) {
+    
+                                    // moving one step forward
+                                    if d == (dir,0) {
+                                        if !self.is_piece_at(destination) {
+                                            match destination/8 {
+                                                0|7 => {
+                                                    for kind in [PieceKind::Queen, PieceKind::Rook, PieceKind::Bishop, PieceKind::Knight] {
+                                                        let m = Move::Promotion(sq,destination,kind);
+                                                        if !self.results_in_check(m) {
+                                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                        }
+                                                    }
+                                                },
+                                                _ => {
+                                                    let m = Move::Standard(sq,destination);
+                                                    if !self.results_in_check(m) {
+                                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 
-                                    // capture to the left
-                                    if sq%8 > 0 && self.is_side_at(sq - 9, self.side_to_move.opposite()){
-                                        let m = Move::Standard(sq, sq - 9);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                    // moving two steps forward
+                                    if d == (2*dir,0) {
+                                        if (sq/8 == 1 && side == Side::Black ||sq/8 == 6 && side == Side::White) && !self.is_piece_at(sq + 8*dir) && !self.is_piece_at(sq + 16*dir) {
+                                            let m = Move::Standard(sq,destination);
+                                            if !self.results_in_check(m) {
+                                                res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                            }
                                         }
                                     }
 
-                                    // capture to the right
-                                    if sq%8 < 7 && self.is_side_at(sq - 7, self.side_to_move.opposite()){
-                                        let m = Move::Standard(sq, sq - 7);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                    }
-                                }
-                                
-                                // promoting 
-                                if sq/8 == 1 {
-                                    if !self.is_piece_at(sq - 8) {
-                                        let m = Move::Promotion(sq, sq - 8, PieceKind::Queen);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq - 8, PieceKind::Rook);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq - 8, PieceKind::Bishop);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq - 8, PieceKind::Knight);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                    }
-
-                                    // capture to the left
-                                    if sq%8 > 0 && self.is_side_at(sq - 9, self.side_to_move.opposite()){
-                                        let m = Move::Promotion(sq, sq - 9, PieceKind::Queen);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq - 9, PieceKind::Rook);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq - 9, PieceKind::Bishop);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq - 9, PieceKind::Knight);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                    }
-
-                                    // capture to the right
-                                    if sq%8 < 7 && self.is_side_at(sq - 7, self.side_to_move.opposite()){
-                                        let m = Move::Promotion(sq, sq - 7, PieceKind::Queen);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq - 7, PieceKind::Rook);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq - 7, PieceKind::Bishop);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq - 7, PieceKind::Knight);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                    }
-
-                                }
-                            
-                                if sq/8 == 6 { // two moves sq the starting square
-                                    if !self.is_piece_at(sq - 8) && !self.is_piece_at(sq - 16) {
-                                        let m = Move::Standard(sq, sq - 16);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                    }
-                                } 
-
-                                // en passant
-                                if let Some((from,to)) = self.en_passant {
-                                    if to%8 > 0 && sq == to - 1 || to%8 < 7 && sq == to + 1 {
-                                        let m = Move::EnPassant(sq,(to + from)/2);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                    // capturing a piece one step forward
+                                    if d == (dir,1) ||d == (dir,-1) {
+                                        if self.is_side_at(destination,side.opposite()) {
+                                            match destination/8 {
+                                                0|7 => {
+                                                    for kind in [PieceKind::Queen, PieceKind::Rook, PieceKind::Bishop, PieceKind::Knight] {
+                                                        let m = Move::Promotion(sq,destination,kind);
+                                                        if !self.results_in_check(m) {
+                                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                        }
+                                                    }
+                                                },
+                                                _ => {
+                                                    let m = Move::Standard(sq,destination);
+                                                    if !self.results_in_check(m) {
+                                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
-
                             }
-                            else {
-                                // not promoting
-                                if sq/8 < 6 { 
-                                    if !self.is_piece_at(sq + 8) {
-                                        let m = Move::Standard(sq, sq + 8);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                    }
 
-                                    // capture to the left
-                                    if sq%8 > 0 && self.is_side_at(sq + 7, self.side_to_move.opposite()){
-                                        let m = Move::Standard(sq, sq + 7);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                    }
-
-                                    // capture to the right
-                                    if sq%8 < 7 && self.is_side_at(sq + 9, self.side_to_move.opposite()){
-                                        let m = Move::Standard(sq, sq + 9);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                    }
-
-                                }
-                                
-                                // promoting
-                                if sq/8 == 6 { 
-                                    if !self.is_piece_at(sq + 8) {
-                                        let m = Move::Promotion(sq, sq + 8, PieceKind::Queen);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq + 8, PieceKind::Rook);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m= Move::Promotion(sq, sq + 8, PieceKind::Bishop);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq + 8, PieceKind::Knight);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                    }
-
-                                    // capture to the left
-                                    if sq%8 > 0 && self.is_side_at(sq + 7, self.side_to_move.opposite()){
-                                        let m = Move::Promotion(sq, sq + 7, PieceKind::Queen);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq + 7, PieceKind::Rook);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq + 7, PieceKind::Bishop);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq + 7, PieceKind::Knight);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                    }
-
-                                    // capture to the right
-                                    if sq%8 < 7 && self.is_side_at(sq + 9, self.side_to_move.opposite()){
-                                        let m = Move::Promotion(sq, sq + 9, PieceKind::Queen);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq + 9, PieceKind::Rook);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq + 9, PieceKind::Bishop);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                        let m = Move::Promotion(sq, sq + 9, PieceKind::Knight);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                    }
-                                }
-                                
-                                // two moves from the starting square
-                                if sq/8 == 1 { 
-                                    if !self.is_piece_at(sq + 8) && !self.is_piece_at(sq + 16) {
-                                        let m = Move::Standard(sq, sq + 16);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
-                                    }
-                                } 
-
-                                // en passant
-                                if let Some((from,to)) = self.en_passant {
-                                    if to%8 > 0 && sq == to - 1 || to%8 < 7 && sq == to + 1 {
-                                        let m = Move::EnPassant(sq,(to + from)/2);
-                                        if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
-                                        }
+                            // en passant
+                            if let Some((from,to)) = self.en_passant {
+                                if to%8 > 0 && sq == to - 1 || to%8 < 7 && sq == to + 1 {
+                                    let m = Move::EnPassant(sq,(to + from)/2);
+                                    if !self.results_in_check(m) {
+                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
                                     }
                                 }
                             }
@@ -1013,7 +530,8 @@ impl BoardState {
                 }
             }
         }
-
+        //println!("True legal moves were: {}\n the new legal moves were: {}", res.len(), res_temp.len());
+        
         return res;
     }
 
@@ -1032,143 +550,82 @@ impl BoardState {
     // returns of the king of the specified side is currently in check
     // this is mostly for legality checking for now [FIXED]
     pub fn is_in_check(&self, side: Side) -> bool {
-        
-        let king_position = self.piece_arr
-                                    .iter()
-                                    .position(|piece| {
-                                        piece.is_some_and(|p| p.side == side && p.kind == PieceKind::King)
-                                    })
-                                    .expect("Board state has no king for the requested side") as i8;
+
+        let king_position: i8 = match side {
+            Side::White => self.white_king,
+            Side::Black => self.black_king,
+        };
 
         self.is_attacked(king_position, side.opposite())
     }
         
-    // returns true if the given square is attacked by the given side [FIXED]
+    // returns true if the given square is attacked by the given side [OPTIMIZATIONS FOR LOOKUPS]
     pub fn is_attacked(&self, square: i8, side: Side) -> bool {
 
         // first we look for an attack in the direction of a rook
-        let directions: [i8; 4] = [-1,1,8,-8];
+        let directions: [(i8,i8); 4] = [(-1,0),(1,0),(0,1),(0,-1)];
         for d in directions {
             let mut pos: i8 = square;
-            loop { 
-                pos += d;
-                if (pos/8 != square/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
-                    break;
-                }
-                else if self.is_piece_at(pos) {
-                    if self.is_side_at(pos,side) && (self.is_kind_at(pos, PieceKind::Rook) || self.is_kind_at(pos, PieceKind::Queen)) {
-                        return true;
+            loop {
+                if let Some(destination) = self.stays_in_bounds(pos, d) {
+                    if self.is_piece_at(destination) {
+                        if self.is_side_at(destination, side) && (self.is_kind_at(destination, PieceKind::Queen) ||self.is_kind_at(destination, PieceKind::Rook)) {
+                            return true;
+                        }
+                        break;
                     }
+                    pos = destination;
+                }
+                else {
                     break;
                 }
             }
         }
 
         // then in the directions of a bishop
-        let directions: [i8; 4] = [-9,-7,7,9];
-
+        let directions: [(i8,i8); 4] = [(-1,-1),(-1,1),(1,-1),(1,1)];
         for d in directions {
             let mut pos: i8 = square;
-            loop { 
-                if d == -9 && (pos < 8 || pos%8 == 0) {
-                    break;
-                }
-                else if d == -7 && (pos < 8 || pos%8 == 7) {
-                    break;
-                }
-                else if d == 9 && (pos > 55 || pos%8 == 7) {
-                    break;
-                }
-                else if d == 7 && (pos > 55 || pos%8 == 0) {
-                    break;
+            loop {
+                if let Some(destination) = self.stays_in_bounds(pos, d) {
+                    if self.is_piece_at(destination) {
+                        if self.is_side_at(destination, side) && (self.is_kind_at(destination, PieceKind::Queen) ||self.is_kind_at(destination, PieceKind::Bishop)) {
+                            return true;
+                        }
+                        break;
+                    }
+                    pos = destination;
                 }
                 else {
-                    pos += d;
-                }
-
-                if self.is_piece_at(pos) {
-                    if self.is_side_at(pos,side) && (self.is_kind_at(pos, PieceKind::Bishop) || self.is_kind_at(pos, PieceKind::Queen)){
-                        return true;
-                    }
                     break;
                 }
             }
         }
 
         // then in the possible squares for a knight
-        if square/8 > 1 && square % 8 > 0 {
-            let pos = square - 2*8 - 1;
-            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
-                return true;
-            } 
-        }
-        if square/8 > 1 && square % 8 < 7 {
-            let pos = square - 2*8 + 1;
-            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
-                return true;
-            }
-        }
-        if square/8 > 0 && square % 8 > 1 {
-            let pos = square - 1*8 - 2;
-            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
-                return true;
-            }
-        }
-        if square/8 > 0 && square % 8 < 6 {
-            let pos = square - 1*8 + 2;
-            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
-                return true;
-            }
-        }
-        if square/8 < 6 && square % 8 > 0 {
-            let pos = square + 2*8 - 1;
-            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
-                return true;
-            }
-        }
-        if square/8 < 6 && square % 8 < 7 {
-            let pos = square + 2*8 + 1;
-            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
-                return true;
-            }
-        }
-        if square/8 < 7 && square % 8 > 1 {
-            let pos = square + 1*8 - 2;
-            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
-                return true;
-            }
-        }
-        if square/8 < 7 && square % 8 < 6 {
-            let pos = square + 1*8 + 2;
-            if self.is_kind_at(pos, PieceKind::Knight) && self.is_side_at(pos, side) {
-                return true;
-            }
+        let directions: [(i8,i8);8] = [(1,2), (1,-2), (2,1), (2,-1), (-1,2), (-1,-2), (-2,1), (-2,-1)];
+        for d in directions {
+            if let Some(destination) = self.stays_in_bounds(square, d) {
+                // now we are in bounds
+                if let Some(piece) = self.piece_arr[destination as usize] {
+                    if piece.side == side && piece.kind == PieceKind::Knight {
+                        return true;
+                    }
+                }
+            }   
         }
 
-        // possible attacks by the king
-        if square % 8 > 0 && square/8 > 0 && self.is_side_at(square - 9, side) && self.is_kind_at(square - 9, PieceKind::King) {
-            return true;
-        }
-        if square/8 > 0 && self.is_side_at(square - 8, side) && self.is_kind_at(square - 8, PieceKind::King) {
-            return true;
-        }
-        if square % 8 < 7 && square/8 > 0 && self.is_side_at(square - 7, side) && self.is_kind_at(square - 7, PieceKind::King) {
-            return true;
-        }
-        if square % 8 < 7 && self.is_side_at(square + 1, side) && self.is_kind_at(square + 1, PieceKind::King) {
-            return true;
-        }
-        if square % 8 < 7 && square/8 < 7 && self.is_side_at(square + 9, side) && self.is_kind_at(square + 9, PieceKind::King) {
-            return true;
-        }
-        if square/8 < 7 && self.is_side_at(square + 8, side) && self.is_kind_at(square + 8, PieceKind::King) {
-            return true;
-        }
-        if square % 8 > 0 && square/8 < 7 && self.is_side_at(square + 7, side) && self.is_kind_at(square + 7, PieceKind::King){
-            return true;
-        }
-        if square % 8 > 0 && self.is_side_at(square - 1, side) && self.is_kind_at(square - 1, PieceKind::King) {
-            return true;
+        // then possible attacks for a king
+        let directions: [(i8, i8); 8] = [(-1,-1), (-1, 0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1)];
+        for d in directions {
+            if let Some(destination) = self.stays_in_bounds(square, d) {
+                // now we are in bounds
+                if let Some(piece) = self.piece_arr[destination as usize] {
+                    if piece.side == side && piece.kind == PieceKind::King {
+                        return true;
+                    }
+                }
+            }
         }
 
         // possible attacks by pawns
@@ -1193,183 +650,6 @@ impl BoardState {
 
         // This is reached if there is no attack
         return false;
-        
-        /*
-        for piece in &self.pieces {
-            if piece.side == side {
-                match piece.kind {
-                    PieceKind::King => {
-                        if 
-                            square == piece.square - 9 && piece.square%8 > 0 ||
-                            square == piece.square - 8 ||
-                            square == piece.square - 7 && piece.square%8 < 7 ||
-                            square == piece.square + 1 && piece.square%8 < 7 ||
-                            square == piece.square + 9 && piece.square%8 < 7 ||
-                            square == piece.square + 8 ||
-                            square == piece.square + 7 && piece.square%8 > 0 ||
-                            square == piece.square - 1 && piece.square%8 > 0
-                        {
-                            return true;
-                        }
-                    },
-                    PieceKind::Queen => {
-
-                        // looking along the files and ranks until a collision
-                        let directions: [i8; 4] = [-1,1,8,-8];
-
-                        for d in directions {
-                            let mut pos :i8 = piece.square;
-                            loop { 
-                                pos += d;
-
-                                if (pos/8 != piece.square/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
-                                    break;
-                                }
-
-                                if pos == square {
-                                    return true;
-                                }
-
-                                if self.is_piece_at(pos) {
-                                    break;
-                                }
-
-                            }
-                        }
-
-                        // check all diagonals
-                        let directions: [i8; 4] = [-9,-7,7,9];
-
-                        for d in directions {
-                            let mut pos :i8 = piece.square;
-                            loop { 
-                                if d == -9 && (pos < 8 || pos%8 == 0) {
-                                    break;
-                                }
-                                else if d == -7 && (pos < 8 || pos%8 == 7) {
-                                    break;
-                                }
-                                else if d == 9 && (pos > 55 || pos%8 == 7) {
-                                    break;
-                                }
-                                else if d == 7 && (pos > 55 || pos%8 == 0) {
-                                    break;
-                                }
-                                else {
-                                    pos += d;
-                                }
-
-                                if pos == square {
-                                    return true;
-                                }
-
-                                if self.is_piece_at(pos) {
-                                    break;
-                                }
-
-                            }
-                        }
-
-                    },
-                    PieceKind::Rook => {
-
-                        // looking along the files and ranks until a collision
-                        let directions: [i8; 4] = [-1,1,8,-8];
-
-                        for d in directions {
-                            let mut pos :i8 = piece.square;
-                            loop { 
-                                pos += d;
-
-                                if (pos/8 != piece.square/8 && d.abs() == 1) || (pos < 0 || pos > 63) {
-                                    break;
-                                }
-
-                                if pos == square {
-                                    return true;
-                                }
-
-                                if self.is_piece_at(pos) {
-                                    break;
-                                }
-                                
-                            }
-                        }
-                    },
-                    PieceKind::Bishop => {
-
-                        // check all diagonals
-                        let directions: [i8; 4] = [-9,-7,7,9];
-
-                        for d in directions {
-                            let mut pos :i8 = piece.square;
-                            loop { 
-                                if d == -9 && (pos < 8 || pos%8 == 0) {
-                                    break;
-                                }
-                                else if d == -7 && (pos < 8 || pos%8 == 7) {
-                                    break;
-                                }
-                                else if d == 9 && (pos > 55 || pos%8 == 7) {
-                                    break;
-                                }
-                                else if d == 7 && (pos > 55 || pos%8 == 0) {
-                                    break;
-                                }
-                                else {
-                                    pos += d;
-                                }
-
-                                if pos == square {
-                                    return true;
-                                }
-
-                                if self.is_piece_at(pos) {
-                                    break;
-                                }
-
-                            }
-                        }
-
-                    },
-                    PieceKind::Knight => {
-
-                        // just check L shapes that are in bounds
-                        if 
-                            square == piece.square - 2*8 - 1 && piece.square/8 > 1 && piece.square%8 > 0 ||
-                            square == piece.square - 2*8 + 1 && piece.square/8 > 1 && piece.square%8 < 7 ||
-                            square == piece.square - 1*8 - 2 && piece.square/8 > 0 && piece.square%8 > 1 ||
-                            square == piece.square - 1*8 + 2 && piece.square/8 > 0 && piece.square%8 < 6 ||
-                            square == piece.square + 2*8 - 1 && piece.square/8 < 6 && piece.square%8 > 0 ||
-                            square == piece.square + 2*8 + 1 && piece.square/8 < 6 && piece.square%8 < 7 ||
-                            square == piece.square + 1*8 - 2 && piece.square/8 < 7 && piece.square%8 > 1 ||
-                            square == piece.square + 1*8 + 2 && piece.square/8 < 7 && piece.square%8 < 6
-                        {
-                            return true;
-                        }
-
-                    },
-                    PieceKind::Pawn => {
-
-                        // there are only a couple of squares attacked by pawns
-                        // this does not see en passant attacks for now
-
-                        if 
-                            piece.side == Side::White && square == piece.square - 9 && piece.square % 8 > 0 ||
-                            piece.side == Side::White && square == piece.square - 7 && piece.square % 8 < 7 ||
-                            piece.side == Side::Black && square == piece.square + 7 && piece.square % 8 > 0 ||
-                            piece.side == Side::Black && square == piece.square + 9 && piece.square % 8 < 7
-                        {
-                            return true;
-                        }
-
-                    },
-                }
-            }
-        }
-        */
-
-        //return false;
     }
 
     // returns a priority value for a move, saying how urgently 
@@ -1402,9 +682,7 @@ impl BoardState {
         } 
 
         return res;
-    
 
-        return 0;
     }
 
     // this unmakes a move, given an un-move
@@ -1652,7 +930,7 @@ pub fn coordinates_to_move(board_state: &BoardState, from: i8, to: i8) -> Move {
     }
 }
 
-// methods for accessing piece information at various squares [FIXED]
+// methods for accessing piece information at various squares
 impl BoardState { 
 
     pub fn is_piece_at(&self, square: i8) -> bool {
@@ -1694,9 +972,21 @@ impl BoardState {
         return false;
     }
 
+    // calculates if a movement is in bounds (given as (rank, file))
+    // returns None if out of bounds
+    // otherwise returns Some(resulting square)
+    pub fn stays_in_bounds(&self, square: i8, displacement: (i8,i8)) -> Option<i8> {
+        if square / 8 + displacement.0 > -1 && square / 8 + displacement.0 < 8 && square % 8 + displacement.1 > -1 && square % 8 + displacement.1 < 8 {
+            return Some(square + 8*displacement.0 + displacement.1);
+        }
+        else {
+            return None;
+        }
+    }
+
 }
 
-// methods for setting up the starting position of the board [FIXED]
+// methods for setting up the starting position of the board
 impl BoardState { 
 
     pub fn to_starting_position(&mut self) {
@@ -1749,27 +1039,6 @@ impl BoardState {
     }
 
 }
-
-// keeps track of pinned pieces
-pub struct Pin {
-    pub pinned_square: i8,
-    pub pinner_square:i8, 
-    pub direction: i8,
-}
-
-impl Pin {
-    pub fn is_pinned(&self, square: i8) -> bool {
-        return self.pinned_square == square;
-    }
-}
-
-pub struct Check {
-    pub checker_square:i8, 
-    pub direction: i8,
-    pub kind: PieceKind,
-}
-
-
 
 // the Move enum [FIXED]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
