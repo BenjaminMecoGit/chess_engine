@@ -64,10 +64,49 @@ impl BoardState {
     // Evaluates a position at face value [FIXED]
     pub fn evaluation(&self) -> f64 {
 
+        // the material balance
         let mut res: f64 = self.material;
-        let mut control: [f64;64] = [0.;64];
+
+        //a weight for the phase of the game
         let endgame_weight: f64 = self.phase_weight();
+
+        // the total control exerted on the board
+        // also calculates other things related to the result for the sake of optimization
+        let control: [f64;64] = self.control(&mut res, endgame_weight);
+   
+        // calculating the net influence, with respect to some positional considerations
+        for i in 0..64 {
+            
+            //the net control on this square
+            let mut c: f64 = control[i];
+            
+            // control should be more valueable when it is closer to the opposing king,
+            // when there are fewer pieces on the board
+            let white_king_distance: f64 = ((self.white_king/8 - (i/8) as i8).abs() + (self.white_king%8 - (i%8) as i8).abs()) as f64;
+            let black_king_distance: f64 = ((self.black_king/8 - (i/8) as i8).abs() + (self.black_king%8 - (i%8) as i8).abs()) as f64;
+
+            let opposing_king_distance: f64 = if c > 0. 
+                {
+                    black_king_distance
+                }
+                else {
+                    white_king_distance
+                };
+
+            c *= 1. + endgame_weight * KING_PROXIMITY / (1. + opposing_king_distance);
+
+            c *= 1.0 + (1.0 - endgame_weight) * CONTROL_WEIGHT_ARRAY[i];
+
+            res += INFLUENCE_COEFF * c;
+        }
         
+        return res;
+    }
+
+    fn control(&self, res: &mut f64, endgame_weight: f64) -> [f64; 64] {
+
+        let mut control = [0.;64];
+
         for i in 0..64 {
             if let Some(piece) = self.piece_arr[i] {
                 let sq = i as i8;
@@ -76,12 +115,13 @@ impl BoardState {
                     Side::Black => -1.,
                 };
 
-
+                /* 
                 // distance to the king, this will be made use of of eventually
                 let king_distance: f64 = match piece.side {
                     Side::Black => ((self.white_king%8 - sq%8).abs() + (self.white_king/8 - sq/8).abs()) as f64,
                     Side::White => ((self.black_king%8 - sq%8).abs() + (self.black_king/8 - sq/8).abs()) as f64,
                 };
+                */
                 
                 // this makes sure to calculate the control exerted by a piece
                 match piece.kind {
@@ -97,8 +137,8 @@ impl BoardState {
                         // the King is valuable when there are no opposing pieces nearby
 
                         // middlegame and endgame positioning for the king:
-                        res += sign * KING_ACTIVITY_TABLE[sq as usize] * endgame_weight;
-                        res += sign * KING_SAFETY_TABLE[sq as usize] * (1.0 - endgame_weight);
+                        *res += sign * KING_ACTIVITY_TABLE[sq as usize] * endgame_weight;
+                        *res += sign * KING_SAFETY_TABLE[sq as usize] * (1.0 - endgame_weight);
 
                     },
                     PieceKind::Queen => {
@@ -226,52 +266,26 @@ impl BoardState {
                                     control[(sq + 9) as usize] += sign*PAWN_CONTROL;
                                 }
                             }
-                        }    
+                        } 
 
-                        // a pawn is worth more the further advanced it is
+                        // pawn structure considerations
+
+                        // a more advanced pawn is morevaluable
                         let advancement = match piece.side {
                             Side::White => (6 - sq / 8).max(0),
                             Side::Black => (sq / 8 - 1).max(0),
                         };
 
-                        res += sign * (advancement as f64) * PAWN_ADVANCE;
+                        
 
-                        // pawn structure condiderations
+                        *res += sign * (advancement as f64) * PAWN_ADVANCE;   
                     },
                 }
             }
         }
-        
-        // calculating the net influence, with respect to some positional considerations
 
-        for i in 0..64 {
-            
-            //the net control on this square
-            let mut c: f64 = control[i];
-            
-            // control should be more valueable when it is closer to the opposing king,
-            // when there are fewer pieces on the board
-            let white_king_distance: f64 = ((self.white_king/8 - (i/8) as i8).abs() + (self.white_king%8 - (i%8) as i8).abs()) as f64;
-            let black_king_distance: f64 = ((self.black_king/8 - (i/8) as i8).abs() + (self.black_king%8 - (i%8) as i8).abs()) as f64;
-
-            let opposing_king_distance: f64 = if c > 0. 
-                {
-                    black_king_distance
-                }
-                else {
-                    white_king_distance
-                };
-
-            c *= 1. + endgame_weight * KING_PROXIMITY / (1. + opposing_king_distance);
-
-            c *= 1.0 + (1.0 - endgame_weight) * CONTROL_WEIGHT_ARRAY[i];
-
-            res += INFLUENCE_COEFF * c;
-        }
-        
-        return res;
+        return control;
     }
-
 
     fn phase_weight(&self) -> f64 {
         let mut phase = 0.0;

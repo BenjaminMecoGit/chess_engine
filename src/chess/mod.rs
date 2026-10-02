@@ -23,7 +23,7 @@ pub struct BoardState {
 
 // methods for making and getting legal moves on the board [FIXED]
 impl BoardState { 
-
+ 
     // Applies a move without checking for legality. 
     // The caller must guarantee that a move is indeed legal before calling
     // Returns the information needed to retur to the previous board state
@@ -982,6 +982,66 @@ impl BoardState {
         else {
             return None;
         }
+    }
+
+    // adds a piece to the board in the exploration mode
+    pub fn add_piece(&mut self, square: i8, piece: Option<Piece>) -> bool {
+
+        // record a change in the material balance and total pieces
+        if let Some(captured_piece) = self.piece_arr[square as usize] {
+
+            if captured_piece.kind == PieceKind::King {
+                return false;
+            }
+
+            self.total_pieces -= 1;
+            match captured_piece.side {
+                Side::White => self.material -= captured_piece.get_value(),
+                Side::Black => self.material += captured_piece.get_value(),
+            }
+        }
+
+        if let Some(placed_piece) = piece {
+            match placed_piece.side {
+                Side::White => self.material += placed_piece.get_value(),
+                Side::Black => self.material -= placed_piece.get_value(),
+            }
+            self.total_pieces += 1;
+        }   
+
+        // control en-passant
+        if let Some((from,to)) = self.en_passant {
+            if to == square ||(to + from)/2 == square {
+                self.en_passant = None;
+
+            }
+        }     
+
+        // finally place the piece in the square
+        self.piece_arr[square as usize] = piece;
+
+        return true;   
+    }
+
+    pub fn clear(&mut self) {
+        // clears all the pieces but the kings
+        for i in 0..64 {
+            if let Some(piece) = self.piece_arr[i] {
+                if piece.kind != PieceKind::King {
+                    self.piece_arr[i] = None;
+                }
+            }
+        }
+
+        self.side_to_move = Side::White;
+        self.white_short_castle = false;
+        self.white_long_castle = false;
+        self.black_short_castle = false;
+        self.black_long_castle = false;
+        self.en_passant = None;
+        self.material = 0.;
+        self.total_pieces = 2;
+
     }
 
 }

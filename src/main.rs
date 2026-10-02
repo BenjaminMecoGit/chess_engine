@@ -16,6 +16,7 @@ use crate::chess::{
 use crate::analysis::{
     AnalysisNode,
     AnalysisTree,
+    Solved,
 };
 
 //mod analysis;
@@ -30,11 +31,15 @@ const SQUARE_HIGHLIGHT_COLOR: Color = Color::new(134./256.,204./256.,144./256.,0
 //const SQUARE_ATTACKED_COLOR: Color = Color::new(256./256.,0./256.,0./256.,0.86);
 const SQUARE_SIZE: f32 = 80.0;
 const PIECE_SIZE: f32 = 80.0;
+const SMALL_SCALE: f32 = 0.75;
 const FONT_SIZE: u16 = 40;
+const SMALL_BOARD_X: f32 = 0.955;
+const SMALL_BOARD_Y: f32 = 0.5;
+
 
 // for analysis
 const COMPUTER_THINK: f64 = 5.;
-const COMPUTER_TIME_FRIEND: f64 = 15./1000.;
+const COMPUTER_TIME_FRIEND: f64 = 25./1000.;
 const COMPUTER_TIME_ON_PLAYER: f64 = 15./1000.;
 const COMPUTER_TIME_ON_COMPUTER: f64 = 45./1000.;
 const MAX_VISITS: usize = 10_000_000;
@@ -45,6 +50,7 @@ async fn main() {
 
     // setting window size
     request_new_screen_size(1080.,800.);
+
     // initializing the textures for the pieces
     let piece_textures = ChessTextures {
         black_pawn_texture: load_texture("assets/pieces/black_pawn.png").await.expect("Could not load texture"),
@@ -76,10 +82,12 @@ async fn main() {
                                                  highlight_color: SQUARE_HIGHLIGHT_COLOR,
                                                  highlight: false,
                                                 } ;8];8];
+
     for file in 0..8 {
         for rank in 0..8 {
             squares[file][rank].file = file as i8;
             squares[file][rank].rank = rank as i8;
+
             if (file + rank) % 2 == 0 {
                 squares[file][rank].color = LIGHT_SQUARE_COLOR;
             }
@@ -88,7 +96,43 @@ async fn main() {
             }
         }
     }
+                                                
+    // initializing squares for dummy pieces in the explore mode
+    let mut dummy_squares: [[Square; 5];2] = [[Square {
+                                                file: 0, 
+                                                rank: 0, 
+                                                side_length: SQUARE_SIZE * SMALL_SCALE, 
+                                                color: Color::new(0.,0.,0.,0.),
+                                                highlight_color: SQUARE_HIGHLIGHT_COLOR,
+                                                highlight: false,
+                                            } ;5];2];
+    let mut dummy_pieces: [[Piece; 5];2] = [[Piece {side: Side::White, kind: PieceKind::Pawn} ;5];2];
     
+    for i in 0..2 {
+        for j in 0..5 {
+            dummy_squares[i as usize][j as usize].file = 8 + i as i8;
+            dummy_squares[i as usize][j as usize].rank = 8 + j as i8;
+
+            dummy_squares[i as usize][j as usize].color = match (i + j)%2 {
+                0 => DARK_SQUARE_COLOR,
+                _ => LIGHT_SQUARE_COLOR
+            };
+
+            dummy_pieces[i as usize][j as usize].side = match i {
+                0 => Side::White,
+                _ => Side::Black,
+            };
+            dummy_pieces[i as usize][j as usize].kind = match j {
+                0 => PieceKind::Queen,
+                1 => PieceKind::Rook,
+                2 => PieceKind::Bishop,
+                3 => PieceKind::Knight,
+                _ => PieceKind::Pawn,
+            };
+
+        }
+    }
+
     // the initial board state
     let mut board_state: BoardState = BoardState{piece_arr: [None; 64], 
                                                  side_to_move: Side::White,
@@ -140,15 +184,24 @@ async fn main() {
     buttons.insert("main menu", spawn_go_to_main_button());
     buttons.insert("evaluation", spawn_evaluation_button());
     buttons.insert("perspective", spawn_change_perspective_button());
+    buttons.insert("clear board", spawn_clear_board_button());
+    buttons.insert("select side", spawn_select_side_button());
+
     buttons.insert("white mode", spawn_white_mode_button());
     buttons.insert("black mode", spawn_black_mode_button());
     buttons.insert("random mode", spawn_random_mode_button());
 
     buttons.insert("result window", spawn_game_winner_button());
+
+    buttons.insert("white short castle", spawn_wsc_button());
+    buttons.insert("white long castle", spawn_wlc_button());
+    buttons.insert("black short castle", spawn_bsc_button());
+    buttons.insert("black long castle", spawn_blc_button());
     
     buttons.get_mut("friend mode").expect("No friend button").visible = true;
     buttons.get_mut("computer mode").expect("No computer button").visible = true;
     buttons.get_mut("explore mode").expect("No explore button").visible = true;
+
 
     // variables for visuals for selected squares
     let mut selected_square: Option<i8> = None; 
@@ -177,6 +230,12 @@ async fn main() {
                     }
                 }
 
+                for i in 0..2 {
+                    for j in 0..5 {
+                        dummy_squares[i][j].highlight = false;
+                    }
+                }
+
                 // clear all buttons
                 for (_, but) in &mut buttons {
                     but.visible = false;
@@ -184,6 +243,7 @@ async fn main() {
                 }
 
                 buttons.get_mut("evaluation").expect("No evaluation button").text = "Show evaluation".to_string();
+                buttons.get_mut("evaluation").expect("No evaluation button").text_centered = true;
 
                 // set main menu buttons
                 buttons.get_mut("friend mode").expect("No friend button").visible = true;
@@ -215,6 +275,60 @@ async fn main() {
                 for i in 0..32 {
                     (squares[i%8][i/8].highlight, squares[7-i%8][7-i/8].highlight) = (squares[7-i%8][7-i/8].highlight, squares[i%8][i/8].highlight);
                 }
+            }
+            else if buttons["clear board"].mouse_is_on() {
+
+                // clear the board
+                board_state.clear();
+                analysis_tree.reset_to(&board_state);
+
+                // un-highlight all squares
+                for file in 0..8 {
+                    for rank in 0..8 {
+                        squares[file as usize][rank as usize].highlight = false;
+                    }
+                }
+
+                for i in 0..2 {
+                    for j in 0..5 {
+                        dummy_squares[i as usize][j as usize].highlight = false;
+                    }
+                }
+                selected_square = None;
+            }
+            else if buttons["select side"].mouse_is_on() {
+
+                // modify the board
+                board_state.side_to_move = board_state.side_to_move.opposite();
+                analysis_tree.reset_to(&board_state);
+
+                // modify the button
+                match board_state.side_to_move {
+                    Side::White => {
+                        buttons.get_mut("select side").expect("No select side button").text = "White to move".to_string();
+                        buttons.get_mut("select side").expect("No select side button").color = WHITE;
+                        buttons.get_mut("select side").expect("No select side button").text_color = BLACK;
+                    },
+                    Side::Black => {
+                        buttons.get_mut("select side").expect("No select side button").text = "Black to move".to_string();
+                        buttons.get_mut("select side").expect("No select side button").color = BLACK;
+                        buttons.get_mut("select side").expect("No select side button").text_color = WHITE;
+                    }
+                }
+
+                // un-highlight all squares
+                for file in 0..8 {
+                    for rank in 0..8 {
+                        squares[file as usize][rank as usize].highlight = false;
+                    }
+                }
+
+                for i in 0..2 {
+                    for j in 0..5 {
+                        dummy_squares[i as usize][j as usize].highlight = false;
+                    }
+                }
+                selected_square = None;
             }
 
         }
@@ -261,6 +375,13 @@ async fn main() {
                         buttons.get_mut("main menu").expect("No menu button").visible = true;
                         buttons.get_mut("evaluation").expect("No menu button").visible = true;
                         buttons.get_mut("perspective").expect("No perspective button").visible = true;
+                        buttons.get_mut("clear board").expect("No clear board button").visible = true;
+                        buttons.get_mut("select side").expect("No select side button").visible = true;
+
+                        buttons.get_mut("white short castle").expect("No wsc button").visible = true;
+                        buttons.get_mut("white long castle").expect("No wlc button").visible = true;
+                        buttons.get_mut("black short castle").expect("No bsc button").visible = true;
+                        buttons.get_mut("black long castle").expect("No blc button").visible = true;
 
                     }
                     else if buttons["white mode"].mouse_is_on() || buttons["black mode"].mouse_is_on() || buttons["random mode"].mouse_is_on() {
@@ -313,7 +434,7 @@ async fn main() {
                     }
                 }
 
-                draw_screen(&game_mode, &board_state, &squares, &perspective, &buttons, &piece_textures);
+                draw_screen(&game_mode, &board_state, &squares, &perspective, &buttons, &piece_textures, &dummy_squares, &dummy_pieces);
             },
             GameMode::Friend|GameMode::Computer => {
 
@@ -461,7 +582,223 @@ async fn main() {
                 }
             },
             GameMode::Exploration => {
-                // to be implemented
+                
+                // this game mode is similar to the player vs player game mode, 
+                // but with the following differences
+                // selecting a piece and outside of the board, the piece is removed
+                // selecting a dummy piece to the side and clicking on a square on the board puts this piece here
+                // one can give castling rights to either side to either player
+                // one can give any pawn the property of having been moved two steps (allowing capture en-passant)
+                
+                if is_mouse_button_pressed(MouseButton::Left) {
+
+                    // catching the clicking of a square on the board
+                    let mut clicked_square: i8 = -1;
+
+                    for file in 0..8 {
+                        for rank in 0..8 {
+                            if squares[file][rank].mouse_is_on() {
+                                clicked_square = (rank * 8 + file) as i8;
+                            }
+                        }
+                    }
+
+                    // catching the clicking of one of the dummy pieces
+                    
+                    for i in 0..2 {
+                        for j in 0..5 {
+                            if dummy_squares[i][j].mouse_is_on() {
+                                clicked_square = (64 + 6*j + i) as i8;
+                            }
+                        }
+                    }
+
+
+                    // this only gets invoked if a square on the board was clicked
+                    if clicked_square > -1 {
+
+                        if let Some(old_square) = selected_square {
+
+                            // deselect a square if it is clicked again
+                            if clicked_square == old_square { 
+
+                                if clicked_square < 64 {
+                                    squares[(clicked_square%8) as usize][(clicked_square/8) as usize].highlight = false;
+                                }
+                                else {
+                                    dummy_squares[((clicked_square - 64)%2) as usize][((clicked_square - 64)/6) as usize].highlight = false;
+                                }
+                                selected_square = None;
+                            }
+                            else { 
+
+                                if old_square < 64 && clicked_square < 64 {
+
+                                    // this amounts to a regular move being attempted
+
+                                    // attempt to make the suggested move on the board if it is the player's move     
+                                    let suggested_move: Move;
+
+                                    if perspective == Side::White {
+                                        suggested_move = coordinates_to_move(&board_state, old_square, clicked_square);
+                                    }
+                                    else {
+                                        suggested_move = coordinates_to_move(&board_state, 63 - old_square, 63 - clicked_square);
+                                    }
+
+                                    if board_state.is_legal_move(&suggested_move) {
+                                        
+                                        // if this move is legal, apply it in the usual way
+                                        board_state.apply_move_unchecked(&suggested_move);
+
+                                        // update the analysis tree
+                                        analysis_tree.make_given_move(suggested_move.clone());
+
+                                        // un-highlight all squares
+                                        for file in 0..8 {
+                                            for rank in 0..8 {
+                                                squares[file as usize][rank as usize].highlight = false;
+                                            }
+                                        }
+                                        
+                                        // new highlighted squares
+                                        squares[(old_square%8) as usize][(old_square/8) as usize].highlight = true;
+                                        squares[(clicked_square%8) as usize][(clicked_square/8) as usize].highlight = true;
+
+                                        selected_square = None;
+
+                                        // set the checkpoint time for the computer
+                                        computer_ref_time = get_time();
+                                    }
+                                    else {
+                                        // if the move is not legal, then still make it on the board
+                                        board_state.apply_move_unchecked(&suggested_move);
+
+                                        // but the analysis tree has to be reset this time
+                                        analysis_tree.reset_to(&board_state);
+
+                                        // un-highlight all squares
+                                        for file in 0..8 {
+                                            for rank in 0..8 {
+                                                squares[file as usize][rank as usize].highlight = false;
+                                            }
+                                        }
+
+                                        for i in 0..2 {
+                                            for j in 0..5 {
+                                                dummy_squares[i as usize][j as usize].highlight = false;
+                                            }
+                                        }
+
+                                        selected_square = None;
+                                    }
+                                }
+                                else if old_square > 63 && clicked_square < 64 {
+                                    // this means that a dummy square should be placed on the board
+                                    board_state.add_piece(clicked_square, Some(dummy_pieces[((old_square - 64)%2) as usize][((old_square - 64)/6) as usize]));
+
+                                    // and the analysis should be restarted
+                                    analysis_tree.reset_to(&board_state);
+                                    
+                                    // un-highlight all squares
+                                    for file in 0..8 {
+                                        for rank in 0..8 {
+                                            squares[file as usize][rank as usize].highlight = false;
+                                        }
+                                    }
+
+                                    selected_square = None;
+
+                                    // un-highlight all squares
+                                    for file in 0..8 {
+                                        for rank in 0..8 {
+                                            squares[file as usize][rank as usize].highlight = false;
+                                        }
+                                    }
+
+                                    for i in 0..2 {
+                                        for j in 0..5 {
+                                            dummy_squares[i as usize][j as usize].highlight = false;
+                                        }
+                                    }
+
+                                    // set the checkpoint time for the computer
+                                    computer_ref_time = get_time();
+                                    
+                                } 
+                                else if old_square < 63 && clicked_square > 64{
+                                    // this means that a board square was clicked and then a dummy square,
+                                    // in this case we delete this piece from the board
+                                    board_state.add_piece(old_square, None);
+                                    analysis_tree.reset_to(&board_state);
+
+                                    // un-highlight all squares
+                                    for file in 0..8 {
+                                        for rank in 0..8 {
+                                            squares[file as usize][rank as usize].highlight = false;
+                                        }
+                                    }
+
+                                    for i in 0..2 {
+                                        for j in 0..5 {
+                                            dummy_squares[i as usize][j as usize].highlight = false;
+                                        }
+                                    }
+
+                                    selected_square = None;
+
+
+                                }
+                                else {
+                                    // this means that one, and then another dummy square has been selected.
+                                    // in this case we should just highlight the new and un-highlight the old
+
+                                    // un-highlight all squares
+                                    for file in 0..8 {
+                                        for rank in 0..8 {
+                                            squares[file as usize][rank as usize].highlight = false;
+                                        }
+                                    }
+
+                                    for i in 0..2 {
+                                        for j in 0..5 {
+                                            dummy_squares[i as usize][j as usize].highlight = false;
+                                        }
+                                    }
+
+                                    // and highlight the new
+                                    selected_square = Some(clicked_square);
+                                    dummy_squares[((old_square - 64)%2) as usize][((old_square - 64)/6) as usize].highlight = true;
+                                }
+                                
+                            }
+                        }
+                        else {
+                            if clicked_square < 64 {
+                                // a square can only become selected if it contains a piece of the right color
+                                if 
+                                    perspective == Side::White && board_state.is_side_at(clicked_square, board_state.side_to_move) ||
+                                    perspective == Side::Black && board_state.is_side_at(63 - clicked_square, board_state.side_to_move)
+                                {
+                                    squares[(clicked_square%8) as usize][(clicked_square/8) as usize].highlight = true;
+                                    selected_square = Some(clicked_square);
+                                }
+                            }
+                            else {
+                                dummy_squares[((clicked_square - 64)%2) as usize][((clicked_square - 64)/6) as usize].highlight = true;
+                                selected_square = Some(clicked_square);
+                            }
+                        }
+                    }
+                }
+
+                // after having handled all the clicking, we let the computer do some thinking
+                
+                let starting_time = get_time();
+                while get_time() - starting_time < COMPUTER_TIME_FRIEND && analysis_tree.root.visits < MAX_VISITS {
+                    analysis_tree.traverse();
+                }
+                
             },
         }
         
@@ -469,10 +806,23 @@ async fn main() {
         // showing the evaluation if it is to be shown
         if buttons["evaluation"].text != "Show evaluation".to_string() {
             if let Some(m) = analysis_tree.get_best_move() {
+
+                let evaluation_text = if let Some(solved) = analysis_tree.root.solved {
+                    match solved {
+                        Solved::Draw => "0.00",
+                        Solved::Win(winnner) if winnner == Side::White => "W",
+                        _ => "B"
+                    }
+                }
+                else {
+                    &((analysis_tree.root.combined_value()*100.).round()/100.).to_string()
+                };
+
+
                 buttons.get_mut("evaluation").expect("No evaluation button").text = 
                     m.to_text() + 
                     " : " + 
-                    &((analysis_tree.root.get_value()*100.).round()/100.).to_string() + 
+                    evaluation_text + 
                     " ( " + 
                     &analysis_tree.root.get_depth().to_string() +  
                     " )";
@@ -498,7 +848,7 @@ async fn main() {
         }
 
         // draw the state of affairs
-        draw_screen(&game_mode, &board_state, &squares, &perspective, &buttons, &piece_textures);
+        draw_screen(&game_mode, &board_state, &squares, &perspective, &buttons, &piece_textures, &dummy_squares, &dummy_pieces);
         next_frame().await
     }
 }
@@ -592,8 +942,10 @@ fn draw_screen(
     squares: &[[Square;8];8], 
     perspective: &Side, 
     buttons: &HashMap<&str, Button>,
-    piece_textures: &ChessTextures) 
-{
+    piece_textures: &ChessTextures,
+    dummy_squares: &[[Square;5];2],
+    dummy_pieces: &[[Piece;5];2],
+) {
 
     // only draw a chess board if we are not in the main menu
     if *game_mode != GameMode::MainMenu {
@@ -602,6 +954,42 @@ fn draw_screen(
 
     // draw the buttons of the state
     draw_buttons(buttons);
+
+    // only draw the dummy pieces and their dummy squares if we are in the explore mode
+    if *game_mode == GameMode::Exploration {
+
+        let offset_x = SMALL_BOARD_X * screen_width() - 2.0 * SQUARE_SIZE * SMALL_SCALE;
+        let offset_y = SMALL_BOARD_Y * screen_height() - 5.0 * SQUARE_SIZE * SMALL_SCALE;
+
+        // draw the squares
+        for i in 0..2 {
+            for j in 0..5 {
+                draw_rectangle(
+                    offset_x + (i as f32) * SQUARE_SIZE * SMALL_SCALE,
+                    offset_y + (j as f32) * SQUARE_SIZE * SMALL_SCALE, 
+                    dummy_squares[i as usize][j as usize].side_length, 
+                    dummy_squares[i as usize][j as usize].side_length, 
+                    dummy_squares[i as usize][j as usize].get_color()
+                );
+            }
+        }
+
+        // draw all the pieces
+        for i in 0..2 {
+            for j in 0..5 {
+
+                draw_texture_ex(texture(&dummy_pieces[i][j], piece_textures), 
+                                        offset_x + (i as f32) * SQUARE_SIZE * SMALL_SCALE+ (dummy_squares[i as usize][j as usize].side_length - PIECE_SIZE * SMALL_SCALE)/2., 
+                                        offset_y + (j as f32) * SQUARE_SIZE * SMALL_SCALE + (dummy_squares[i as usize][j as usize].side_length - PIECE_SIZE * SMALL_SCALE)/2.,
+                                        WHITE,
+                                        DrawTextureParams{
+                                            dest_size: Some(vec2(PIECE_SIZE * SMALL_SCALE, PIECE_SIZE * SMALL_SCALE)),
+                                            ..Default::default()
+                                        });
+            }
+        }
+
+    }
 }
 
 fn draw_buttons(buttons: &HashMap<&str, Button>) {
@@ -637,7 +1025,8 @@ fn draw_chess_board(
 
             draw_texture_ex(texture(&piece, 
                                     piece_textures), 
-                                    offset_x + p_x * SQUARE_SIZE, offset_y + p_y * SQUARE_SIZE, 
+                                    offset_x + p_x * SQUARE_SIZE, 
+                                    offset_y + p_y * SQUARE_SIZE, 
                                     WHITE,
                                     DrawTextureParams{
                                         dest_size: Some(vec2(PIECE_SIZE, PIECE_SIZE)),
@@ -649,17 +1038,16 @@ fn draw_chess_board(
 
 fn draw_empty_board(squares: &[[Square;8];8]) {
 
-    let offset_x: f32 = screen_width()/2.0 - 4.0 * SQUARE_SIZE;
-    let offset_y: f32 = screen_height()/2.0 - 4.0 * SQUARE_SIZE;
-
+    let offset_x = screen_width()/2.0 - 4.0 * SQUARE_SIZE;
+    let offset_y = screen_height()/2. - 4.0 * SQUARE_SIZE;
 
     for file in 0..8 {
         for rank in 0..8 {
             draw_rectangle(
                 offset_x + (file as f32) * SQUARE_SIZE,
-                offset_y + (rank as f32) * SQUARE_SIZE, 
-                SQUARE_SIZE, 
-                SQUARE_SIZE, 
+                offset_y + (rank as f32) * SQUARE_SIZE,
+                squares[file][rank].side_length, 
+                squares[file][rank].side_length, 
                 squares[file][rank].get_color()
             );
         }
@@ -693,11 +1081,24 @@ impl Square {
     fn mouse_is_on(&self) -> bool {
         let (mouse_x, mouse_y) = mouse_position();
 
-        return screen_width()/2. + ((self.file - 4) as f32)*self.side_length < mouse_x && 
-               screen_height()/2. + ((self.rank - 4) as f32)*self.side_length < mouse_y && 
-               screen_width()/2. + ((self.file + 1 - 4) as f32)*self.side_length > mouse_x && 
-               screen_height()/2. + ((self.rank + 1 - 4) as f32)*self.side_length > mouse_y;
-
+        if self.file < 8 && self.rank < 8 {
+            let offset_x = 0.5 * screen_width() - 4.0 * SQUARE_SIZE;
+            let offset_y = 0.5 * screen_height() - 4.0 * SQUARE_SIZE;
+            return 
+                offset_x + (self.file as f32) * self.side_length < mouse_x && 
+                offset_y + (self.rank as f32) * self.side_length < mouse_y && 
+                offset_x + ((self.file + 1) as f32) * self.side_length > mouse_x && 
+                offset_y + ((self.rank + 1) as f32) * self.side_length > mouse_y;
+        }
+        else{
+            let offset_x = SMALL_BOARD_X * screen_width() - 2.0 * SQUARE_SIZE * SMALL_SCALE;
+            let offset_y = SMALL_BOARD_Y * screen_height() - 5.0 * SQUARE_SIZE * SMALL_SCALE;
+            return 
+                offset_x + ((self.file - 8) as f32)*self.side_length < mouse_x && 
+                offset_y + ((self.rank - 8) as f32)*self.side_length < mouse_y && 
+                offset_x + ((self.file - 7) as f32)*self.side_length > mouse_x && 
+                offset_y + ((self.rank - 7) as f32)*self.side_length > mouse_y;
+        }
     }
 
     fn get_color(&self) -> Color {
@@ -825,7 +1226,7 @@ fn spawn_friend_mode_button() -> Button {
 fn spawn_evaluation_button() -> Button {
     Button {
         relative_x: 0.01,
-        relative_y: 0.7,
+        relative_y: 0.75,
         width: 200.,
         height: 50.,
         text: String::from(""),
@@ -921,7 +1322,7 @@ fn spawn_explore_mode_button() -> Button {
 fn spawn_go_to_main_button() -> Button { 
     Button {
         relative_x: 0.01,
-        relative_y: 0.8,
+        relative_y: 0.85,
         width: 200.,
         height: 50.,
         text: String::from("Go to main menu"),
@@ -937,7 +1338,7 @@ fn spawn_go_to_main_button() -> Button {
 fn spawn_change_perspective_button() -> Button {
     Button {
         relative_x: 0.01,
-        relative_y: 0.6,
+        relative_y: 0.65,
         width: 200.,
         height: 50.,
         text: String::from("Change perspective"),
@@ -945,6 +1346,38 @@ fn spawn_change_perspective_button() -> Button {
         text_centered: true,
         color: BUTTON_COLOR,
         text_color: BUTTON_TEXT_COLOR,
+        visible: false,
+        shaded: false,
+    }
+}
+
+fn spawn_clear_board_button() -> Button {
+    Button {
+        relative_x: 0.01,
+        relative_y: 0.55,
+        width: 200.,
+        height: 50.,
+        text: String::from("Clear board"),
+        text_size: FONT_SIZE/2,
+        text_centered: true,
+        color: BUTTON_COLOR,
+        text_color: BUTTON_TEXT_COLOR,
+        visible: false,
+        shaded: false,
+    }
+}
+
+fn spawn_select_side_button() -> Button {
+    Button {
+        relative_x: 0.01,
+        relative_y: 0.45,
+        width: 200.,
+        height: 50.,
+        text: String::from("White to move"),
+        text_size: FONT_SIZE/2,
+        text_centered: true,
+        color: WHITE,
+        text_color: BLACK,
         visible: false,
         shaded: false,
     }
@@ -966,7 +1399,69 @@ fn spawn_game_winner_button() -> Button {
     }
 }
 
+fn spawn_wsc_button() -> Button {
+    Button {
+        relative_x: 0.805,
+        relative_y: 0.55,
+        width: 200.,
+        height: 50.,
+        text: String::from("White short castle"),
+        text_size: FONT_SIZE/2,
+        text_centered: true,
+        color: BUTTON_COLOR,
+        text_color: BUTTON_TEXT_COLOR,
+        visible: false,
+        shaded: false,
+    }
+}
 
+fn spawn_wlc_button() -> Button {
+    Button {
+        relative_x: 0.805,
+        relative_y: 0.65,
+        width: 200.,
+        height: 50.,
+        text: String::from("White long castle"),
+        text_size: FONT_SIZE/2,
+        text_centered: true,
+        color: BUTTON_COLOR,
+        text_color: BUTTON_TEXT_COLOR,
+        visible: false,
+        shaded: false,
+    }
+}
+
+fn spawn_bsc_button() -> Button {
+    Button {
+        relative_x: 0.805,
+        relative_y: 0.75,
+        width: 200.,
+        height: 50.,
+        text: String::from("Black short castle"),
+        text_size: FONT_SIZE/2,
+        text_centered: true,
+        color: BUTTON_COLOR,
+        text_color: BUTTON_TEXT_COLOR,
+        visible: false,
+        shaded: false,
+    }
+}
+
+fn spawn_blc_button() -> Button {
+    Button {
+        relative_x: 0.805,
+        relative_y: 0.85,
+        width: 200.,
+        height: 50.,
+        text: String::from("Black long castle"),
+        text_size: FONT_SIZE/2,
+        text_centered: true,
+        color: BUTTON_COLOR,
+        text_color: BUTTON_TEXT_COLOR,
+        visible: false,
+        shaded: false,
+    }
+}
 
 // -------------------------------------
 // the below are helper things for drawing the chess board's state

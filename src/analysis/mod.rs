@@ -10,7 +10,7 @@ const CONFIDENCE_WEIGHT: f64 = 300_000.;
 const MAX_CONFIDENCE: f64 = 0.7;
 const ROLLOUT_DEPTH: usize = 0;
 const UPDATE_DELAY: usize = 500;
-const DEPTH_THRESHOLD: usize = 1_500;
+const DEPTH_THRESHOLD: usize = 2_000;
 const C: f64 = 1.25;
 
 pub struct AnalysisTree {
@@ -21,7 +21,23 @@ pub struct AnalysisTree {
 // functions performing modifications to the tree
 impl AnalysisTree {
 
-    // resets the analysis tree
+    // resets the analysis tree to a given position
+    pub fn reset_to(&mut self, board_state: &BoardState) {
+        self.root = AnalysisNode { 
+            children: Vec::<AnalysisNode>::new(),
+            expanded: false,
+            solved: None,
+            visits: 0, 
+            total_value: 0., 
+            minimax_value: None,
+            m: Move::Standard(-1,-1), 
+            s: board_state.side_to_move,
+        };
+
+        self.board_state_backup = board_state.clone();
+    }
+
+    // resets the analysis tree to the starting position 
     pub fn reset(&mut self) {
         self.root = AnalysisNode { 
             children: Vec::<AnalysisNode>::new(),
@@ -40,8 +56,12 @@ impl AnalysisTree {
     // traverse down the tree
     pub fn traverse(&mut self) {
         // Traverse the tree using a copy of the current board
-        self.root.traverse(&mut self.board_state_backup);
+        if self.root.solved.is_none() {
+            self.root.traverse(&mut self.board_state_backup);
+        }
     } 
+
+
 
     // make a custom move and update the tree accordingly
     // this function assumes that the given move is in fact legal
@@ -104,7 +124,7 @@ impl AnalysisTree {
 pub struct AnalysisNode {
     pub children: Vec<AnalysisNode>,
     pub expanded: bool,
-    pub solved: Option<Side>,
+    pub solved: Option<Solved>,
     pub visits: usize,
     pub total_value: f64,
     pub minimax_value: Option<f64>,
@@ -139,6 +159,11 @@ impl AnalysisNode {
 
     // returns the combined evaluation from the minimax search and the MC mean
     pub fn combined_value(&self) -> f64 {
+
+        if self.visits == 0 {
+            return 0.0;
+        }
+
         let mean = self.total_value / self.visits as f64;
         let minimax = self.minimax_value.unwrap_or(mean);
 
@@ -150,6 +175,23 @@ impl AnalysisNode {
     // returns the index of the promising child so far if there is one
     pub fn get_best_move(&self) -> Option<usize> {
 
+
+        if let Some(solved) = self.solved {
+            match solved {
+                Solved::Draw => {
+                    // choose any move that preserves the draw
+                    return self.children.iter().position(|child| { child.solved == Some(Solved::Draw) });
+                }
+                Solved::Win(winner) if winner == self.s => {
+                    // choose any move that wins here
+                    return self.children.iter().position(|child| { child.solved == Some(Solved::Win(winner)) });
+                }
+                _ => (),
+            }
+        }
+
+        // if there is nothing wise to choose with respect to solvavility, 
+        // choose the best experienced move
         match self.s {
             Side::White => {
                 self.children
@@ -184,38 +226,37 @@ impl AnalysisNode {
             return None;
         }
 
-        // first make sure to visit all children at least once
-        if let Some(index) = self.children.iter().position(|child| child.visits == 0) {
+        // First visit every unsolved child at least once.
+        if let Some(index) = self.children
+            .iter()
+            .position(|child| { child.solved.is_none() && child.visits == 0 })
+        {
             return Some(index);
         }
 
-        // otherwise, find the child with the highest ucb evaluation
-        let sign: f64 = match self.s {
-            Side::White => 1.,
-            Side::Black => -1.,
+        let sign = match self.s {
+            Side::White => 1.0,
+            Side::Black => -1.0,
         };
 
-        let parent_log:f64 = (self.visits as f64).max(1.).ln();
+        let parent_log =
+            (self.visits as f64).max(1.0).ln();
 
         self.children
             .iter()
             .enumerate()
+            .filter(|(_, child)| child.solved.is_none())
             .map(|(index, child)| {
                 let child_visits = child.visits as f64;
+
                 let exploitation = sign * child.combined_value();
-                let exploration = C * (parent_log/child_visits).sqrt();
-                
-                let ucb = exploitation + exploration;
 
-                (index, ucb)
-            })
-            .max_by(|(_, left), (_, right)| {
-                left.total_cmp(right)
-            })
-            .map(|(index, _)| {
-                index
-            })  
+                let exploration = C * (parent_log / child_visits).sqrt();
 
+                (index, exploitation + exploration)
+            })
+            .max_by(|(_, left), (_, right)| { left.total_cmp(right) })
+            .map(|(index, _)| index)
     }
 
     // initializes the children of a node
@@ -251,6 +292,11 @@ impl AnalysisNode {
     // makes one traversal down and updates the information in each node
     pub fn traverse(&mut self, board_state: &mut BoardState) -> f64 {
 
+        // first we check if this is solved
+        if let Some(solved) = self.solved {
+            return solved.solved_value();
+        }
+
         // On the first viset we evaluate without generating moves
         if self.visits == 0 {
             let result = self.rollout(board_state);
@@ -269,16 +315,16 @@ impl AnalysisNode {
 
             // No legal moves means checkmate or stalemate
             if self.children.is_empty() {
-                let result =
-                    if board_state.is_in_check(board_state.side_to_move) {
-                        match board_state.side_to_move {
-                            Side::White => -1.0,
-                            Side::Black => 1.0,
-                        }
-                    } else {
-                        0.0
-                    };
+                let solved = if board_state.is_in_check(board_state.side_to_move,) {
+                    Solved::Win(board_state.side_to_move.opposite())
+                } 
+                else {
+                    Solved::Draw
+                };
 
+                let result = solved.solved_value();
+
+                self.solved = Some(solved);
                 self.visits += 1;
                 self.total_value += result;
                 self.minimax_value = Some(result);
@@ -299,9 +345,7 @@ impl AnalysisNode {
 
         let index = self.ucb_child().expect("Expanded nonterminal node has no child");
 
-        let un_move = board_state.apply_move_unchecked(
-            &self.children[index].m,
-        );
+        let un_move = board_state.apply_move_unchecked(&self.children[index].m);
 
         let result = self.children[index].traverse(board_state);
 
@@ -309,6 +353,7 @@ impl AnalysisNode {
 
         self.visits += 1;
         self.total_value += result;
+        self.update_solved();
         if self.visits % UPDATE_DELAY == 0 {
             self.update_minimax_value();
         }
@@ -336,11 +381,63 @@ impl AnalysisNode {
         };
     }
 
+    fn update_solved(&mut self) {
+
+        if self.children.is_empty() {
+            return;
+        }
+
+        let side = self.s;
+        let opposite = side.opposite();
+
+        // One winning move is enough to solve this node as a win.
+        if self.children.iter().any(|child| {
+            child.solved == Some(Solved::Win(side))
+        }) {
+            self.solved = Some(Solved::Win(side));
+            self.minimax_value = Some(Solved::Win(side).solved_value());
+
+            return;
+        }
+
+        // We cannot prove a draw or loss while some child remains unsolved.
+        if self.children.iter().any(|child| { child.solved.is_none() }) {
+            return;
+        }
+
+        // At this point, every child is solved.
+        if self.children.iter().any(|child| { child.solved == Some(Solved::Draw) }) {
+            self.solved = Some(Solved::Draw);
+            self.minimax_value = Some(0.0);
+        } else {
+            // No winning child, no drawing child, and all children solved:
+            // every move loses.
+            self.solved = Some(Solved::Win(opposite));
+            self.minimax_value = Some(Solved::Win(opposite).solved_value());
+        }
+    }
+
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Solved {
+    Win(Side),
+    Draw,
+}
+
+impl Solved {
+    fn solved_value(&self) -> f64 {
+        match self {
+            Solved::Win(Side::White) => 1.0,
+            Solved::Win(Side::Black) => -1.0,
+            Solved::Draw => 0.0,
+        }
+    }
 }
 
 
 // a simple alpha - beta pruning way of doing minimax
-pub fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut beta: f64) -> f64 {
+fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut beta: f64) -> f64 {
 
 
     // check if we have reached the recursion bottom
@@ -428,6 +525,9 @@ pub fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut b
     }
 
 }
+
+
+
 
 const NORMALIZATION: f64 = 12.;
 // returns a value normalizes between -1 and 1, given an evaluation
