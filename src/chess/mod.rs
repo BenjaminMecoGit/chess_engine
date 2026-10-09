@@ -1,7 +1,8 @@
 const MAX_MOVES: usize = 230;
+
 use arrayvec::ArrayVec;
 
-pub type MoveList = ArrayVec<ScoredMove, MAX_MOVES>;
+pub type MoveList = ArrayVec<Move, MAX_MOVES>;
 
 mod evaluation;
 
@@ -19,6 +20,8 @@ pub struct BoardState {
     pub black_king: i8,
     pub material: f64,
     pub total_pieces: u8,
+    pub half_moves: usize,
+    pub full_moves: usize,
 }
 
 // methods for making and getting legal moves on the board [FIXED]
@@ -58,16 +61,27 @@ impl BoardState {
             black_king: self.black_king,
             material: self.material,
             total_pieces: self.total_pieces,
+            half_moves: self.half_moves,
+            full_moves: self.full_moves,
         };
 
         // keep track of the captured piece in the board data
         if let Some(piece) = captured_piece {
             self.total_pieces -= 1;
+            self.half_moves = 0;
+
             self.material += match piece.side {
                 Side::White => -piece.get_value(),
                 Side::Black => piece.get_value()
             };
         }  
+
+        // reset halfmoves in case of a pawn move
+        if let Some(piece) = self.piece_arr[m.get_from() as usize] {
+            if piece.kind == PieceKind::Pawn {
+                self.half_moves = 0;
+            }
+        }
         
         match m {
             Move::Standard(from, to) => {
@@ -269,6 +283,11 @@ impl BoardState {
             }
         }
 
+        // keep track of the full moves
+        if self.side_to_move == Side::Black {
+            self.full_moves += 1;
+        }
+
         self.side_to_move = self.side_to_move.opposite();
 
         // finally give the unmove
@@ -279,7 +298,7 @@ impl BoardState {
     // says if a given move is legal or not 
     // [FIXED, but we should not have this in the analysis at any point]
     pub fn is_legal_move(&mut self, m: &Move) -> bool {
-        return self.get_legal_moves().contains(&ScoredMove { chess_move: *m, score: self.priority(m) });
+        return self.get_legal_moves().contains(&m);
     }
 
     // returns all the legal moves in the current BoardState [FIXED, but can be optimized quite a lot]
@@ -295,6 +314,7 @@ impl BoardState {
                     match piece.kind {
                         
                         PieceKind::King => {
+
                             // the moves on the immediate squares
                             let directions: [(i8,i8);8] = [(-1,-1), (-1,0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1)];
                             for d in directions {
@@ -302,7 +322,7 @@ impl BoardState {
                                     if !self.is_side_at(destination, side) {
                                         let m = Move::Standard(sq,destination);
                                         if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                            res.push(m);
                                         }
                                     }
                                 }
@@ -320,7 +340,7 @@ impl BoardState {
                                 !self.is_attacked(61, self.side_to_move.opposite()) &&
                                 !self.is_attacked(62, self.side_to_move.opposite())
                                 {
-                                    res.push(ScoredMove {chess_move: Move::Castle(60,62), score: self.priority(&Move::Castle(60,62))});
+                                    res.push(Move::Castle(60,62));
                                     // being in check is controlled above
                                 }
 
@@ -333,7 +353,7 @@ impl BoardState {
                                 !self.is_attacked(59, self.side_to_move.opposite()) &&
                                 !self.is_attacked(58, self.side_to_move.opposite())
                                 {
-                                    res.push(ScoredMove {chess_move: Move::Castle(60,58), score: self.priority(&Move::Castle(60,58))});
+                                    res.push(Move::Castle(60,58));
                                     // being in check is controlled above
                                 }
                             }
@@ -347,7 +367,7 @@ impl BoardState {
                                 !self.is_attacked(5, self.side_to_move.opposite()) &&
                                 !self.is_attacked(6, self.side_to_move.opposite())
                                 {
-                                    res.push(ScoredMove {chess_move: Move::Castle(4,6), score: self.priority(&Move::Castle(4,6))});
+                                    res.push( Move::Castle(4,6));
                                     // being in check is controlled above
                                 }
 
@@ -360,7 +380,7 @@ impl BoardState {
                                 !self.is_attacked(3, self.side_to_move.opposite()) &&
                                 !self.is_attacked(2, self.side_to_move.opposite())
                                 {
-                                    res.push(ScoredMove {chess_move: Move::Castle(4,2), score: self.priority(&Move::Castle(4,2))});
+                                    res.push( Move::Castle(4,2));
                                     // being in check is controlled above
                                 }
                             }
@@ -377,14 +397,14 @@ impl BoardState {
                                             if !self.is_side_at(destination, side) {
                                                 let m = Move::Standard(sq, destination);
                                                 if !self.results_in_check(m) {
-                                                    res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                    res.push(m);
                                                 }
                                             }
                                             break;
                                         }
                                         let m = Move::Standard(sq,destination);
                                         if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                            res.push(m);
                                         }
 
                                         pos = destination;
@@ -413,14 +433,14 @@ impl BoardState {
                                             if !self.is_side_at(destination, side) {
                                                 let m = Move::Standard(sq, destination);
                                                 if !self.results_in_check(m) {
-                                                    res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                    res.push(m);
                                                 }
                                             }
                                             break;
                                         }
                                         let m = Move::Standard(sq,destination);
                                         if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                            res.push(m);
                                         }
 
                                         pos = destination;
@@ -440,7 +460,7 @@ impl BoardState {
                                     if !self.is_side_at(destination, side) {
                                         let m = Move::Standard(sq,destination);
                                         if !self.results_in_check(m) {
-                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                            res.push(m);
                                         }
                                     }
                                 }
@@ -468,14 +488,14 @@ impl BoardState {
                                                     for kind in [PieceKind::Queen, PieceKind::Rook, PieceKind::Bishop, PieceKind::Knight] {
                                                         let m = Move::Promotion(sq,destination,kind);
                                                         if !self.results_in_check(m) {
-                                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                            res.push(m);
                                                         }
                                                     }
                                                 },
                                                 _ => {
                                                     let m = Move::Standard(sq,destination);
                                                     if !self.results_in_check(m) {
-                                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                        res.push(m);
                                                     }
                                                 }
                                             }
@@ -487,7 +507,7 @@ impl BoardState {
                                         if (sq/8 == 1 && side == Side::Black ||sq/8 == 6 && side == Side::White) && !self.is_piece_at(sq + 8*dir) && !self.is_piece_at(sq + 16*dir) {
                                             let m = Move::Standard(sq,destination);
                                             if !self.results_in_check(m) {
-                                                res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                res.push(m);
                                             }
                                         }
                                     }
@@ -500,14 +520,14 @@ impl BoardState {
                                                     for kind in [PieceKind::Queen, PieceKind::Rook, PieceKind::Bishop, PieceKind::Knight] {
                                                         let m = Move::Promotion(sq,destination,kind);
                                                         if !self.results_in_check(m) {
-                                                            res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                            res.push(m);
                                                         }
                                                     }
                                                 },
                                                 _ => {
                                                     let m = Move::Standard(sq,destination);
                                                     if !self.results_in_check(m) {
-                                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                                        res.push(m);
                                                     }
                                                 }
                                             }
@@ -521,7 +541,7 @@ impl BoardState {
                                 if to%8 > 0 && sq == to - 1 || to%8 < 7 && sq == to + 1 {
                                     let m = Move::EnPassant(sq,(to + from)/2);
                                     if !self.results_in_check(m) {
-                                        res.push(ScoredMove {chess_move: m, score: self.priority(&m)});
+                                        res.push(m);
                                     }
                                 }
                             }
@@ -654,32 +674,38 @@ impl BoardState {
 
     // returns a priority value for a move, saying how urgently 
     // one should look at it in the analysis [FIXED]
-    pub fn priority(&self, m: &Move) -> i16 {
+    pub fn priority(&mut self, m: &Move) -> f64 {
 
-        
-        let mut res: i16 = 0;
+        let mut res: f64 = 0.;
+        let un_move = self.apply_move_unchecked(m);
+        if self.is_in_check(self.side_to_move) {
+            res += 100.;
+        }
+        let result = self.un_move_unchecked(un_move);
+        assert!(result, "Un move failed during priority calculation");
+
         // if a capture, this can only be of an opposing colour anyway
         if let Some(kind) = self.kind_at(m.get_to()) {
-            res += 10 * match kind {
-                PieceKind::King => 100,
-                PieceKind::Queen => 9,
-                PieceKind::Rook => 5,
-                PieceKind::Bishop => 3,
-                PieceKind::Knight => 3,
-                PieceKind::Pawn => 1,
+            res += 10. * match kind {
+                PieceKind::King => 10.,
+                PieceKind::Queen => 9.,
+                PieceKind::Rook => 5.,
+                PieceKind::Bishop => 3.,
+                PieceKind::Knight => 3.,
+                PieceKind::Pawn => 2.,
             };
-        }
 
-        if let Some(kind) = self.kind_at(m.get_from()) {
-            res -= match kind {
-                PieceKind::King => 10,
-                PieceKind::Queen => 9,
-                PieceKind::Rook => 5,
-                PieceKind::Bishop => 3,
-                PieceKind::Knight => 3,
-                PieceKind::Pawn => 1,
-            };
-        } 
+            if let Some(kind) = self.kind_at(m.get_from()) {
+                res -= match kind {
+                    PieceKind::King => 10.,
+                    PieceKind::Queen => 9.,
+                    PieceKind::Rook => 5.,
+                    PieceKind::Bishop => 3.,
+                    PieceKind::Knight => 3.,
+                    PieceKind::Pawn => 1.,
+                };
+            } 
+        }
 
         return res;
 
@@ -710,10 +736,12 @@ impl BoardState {
                             }
                         }
                         else {
+                            println!("Un move failed at standard move: {}", um.movement.to_text());
                             return false;
                         }
                     }
                     else {
+                        println!("Un move failed at standard move (occupations error): {}", um.movement.to_text());
                         return false;
                     }
                 },
@@ -750,6 +778,7 @@ impl BoardState {
                         }
                     }
                     else {
+                        println!("Un move failed at standard move: {}", um.movement.to_text());
                         return false;
                     }
                 },
@@ -771,18 +800,22 @@ impl BoardState {
                                     self.piece_arr[capture_square as usize] = Some(captured_piece);
                                 }
                                 else {
+                                    println!("Un move failed at en-passant (moved piece is not pawn): {}", um.movement.to_text());
                                     return false;
                                 }
                             }
                             else {
+                                println!("Un move failed at en-passant (moving piece is not pawn or capture square is not empty): {}", um.movement.to_text());
                                 return false;
                             }
                         }
                         else {
+                            println!("Un move failed at en-passant (capture is not pawn): {}", um.movement.to_text());
                             return false;
                         }
                     }
                     else {
+                        println!("Un move failed at en-passant (no capture): {}", um.movement.to_text());
                         return false;
                     }
                 },
@@ -798,7 +831,7 @@ impl BoardState {
                                 // if all is in place, then we un-promote
                                 p.kind = PieceKind::Pawn;
                                 // we move the pawn back
-                                self.piece_arr[from as usize] = Some(p.clone());
+                                self.piece_arr[from as usize] = Some(p);
 
                                 // and we give back any captured piece
                                 self.piece_arr[to as usize] = if let Some(captured_piece) = um.capture {
@@ -809,14 +842,17 @@ impl BoardState {
                                     };
                             }
                             else {
+                                println!("Un move failed at promotion (non-pawn move): {}", um.movement.to_text());
                                 return false;
                             }
                         }
                         else {
+                            println!("Un move failed at promotion (no piece in destination): {}", um.movement.to_text());
                             return false;
                         }
                     }
                     else {
+                        println!("Un move failed at promotion (destination is not final rank): {}", um.movement.to_text());
                         return false;
                     }
                 },
@@ -833,6 +869,8 @@ impl BoardState {
             self.black_king = um.black_king;
             self.material = um.material;
             self.total_pieces = um.total_pieces;
+            self.half_moves = um.half_moves;
+            self.full_moves = um.full_moves;
 
             return true;
         }
@@ -881,10 +919,74 @@ impl BoardState {
         debug_assert_eq!(self.material, material);
     }
     */
+
+    // Relocates a piece while editing a position.
+    // This does not change side_to_move, create an UnMove, apply promotion rules, or modify castling rights.
+    ///
+    /// It does: update cached king positions, update material and total piece count if a piece is replaced, 
+    // invalidate en passant and prevent either king from being overwritten.
+    ///
+    /// The method returns false if the edit is invalid.
+    pub fn relocate_piece(&mut self, from: i8, to: i8) -> bool {
+        // Prevent invalid array indexing.
+        if !(0..64).contains(&from) ||!(0..64).contains(&to) {
+            return false;
+        }
+
+        // Relocating a piece to its current square is a harmless no-op.
+        if from == to {
+            return self.piece_arr[from as usize].is_some();
+        }
+
+        let Some(moving_piece) = self.piece_arr[from as usize] 
+        else {
+            return false;
+        };
+
+        let destination_piece = self.piece_arr[to as usize];
+
+        // Neither king may be removed or overwritten.
+        if let Some(piece) = destination_piece {
+            if piece.kind == PieceKind::King {
+                return false;
+            }
+        }
+
+        // If the destination is occupied, remove that piece from
+        // the cached material balance and piece count.
+
+        if let Some(removed_piece) = destination_piece {
+            self.total_pieces -= 1;
+
+            match removed_piece.side {
+                Side::White => self.material -= removed_piece.get_value(),
+                Side::Black => self.material += removed_piece.get_value(),
+            }
+        };
+
+        // Relocate the piece.
+        self.piece_arr[to as usize] = Some(moving_piece);
+
+        self.piece_arr[from as usize] = None;
+
+        // Keep cached king positions synchronized.
+        if moving_piece.kind == PieceKind::King {
+            match moving_piece.side {
+                Side::White => self.white_king = to,
+                Side::Black => self.black_king = to,
+            }
+        }
+
+        // Arbitrarily editing the position invalidates en passant.
+        self.en_passant = None;
+
+        return true;    
+    }
+
 }
 
 // for converting coordinates into moves [FIXED]
-pub fn coordinates_to_move(board_state: &BoardState, from: i8, to: i8) -> Move {
+pub fn coordinates_to_move(board_state: &mut BoardState, from: i8, to: i8) -> Move {
     
     // castling for black
     if 
@@ -1033,7 +1135,6 @@ impl BoardState {
             }
         }
 
-        self.side_to_move = Side::White;
         self.white_short_castle = false;
         self.white_long_castle = false;
         self.black_short_castle = false;
@@ -1043,6 +1144,123 @@ impl BoardState {
         self.total_pieces = 2;
 
     }
+
+    // gets the fen code of the position
+    pub fn to_fen(&self) -> String {
+       
+        let mut res = "".to_string();
+        let mut empty_squares: usize = 0;
+
+        for i in 0..8 {
+            for j in 0..8 {
+                if let Some(piece) = self.piece_arr[(8*i + j) as usize] {
+                    // indicate the empty squares
+                    if empty_squares > 0 {
+                        res += &empty_squares.to_string();
+                        empty_squares = 0;
+                    }
+
+                    // note the piece
+                    res += match (piece.side, piece.kind) {
+                        (Side::White, PieceKind:: King) => "K",
+                        (Side::White, PieceKind:: Queen) => "Q",
+                        (Side::White, PieceKind:: Rook) => "R",
+                        (Side::White, PieceKind:: Bishop) => "B",
+                        (Side::White, PieceKind:: Knight) => "N",
+                        (Side::White, PieceKind:: Pawn) => "P",
+                        (Side::Black, PieceKind:: King) => "k",
+                        (Side::Black, PieceKind:: Queen) => "q",
+                        (Side::Black, PieceKind:: Rook) => "r",
+                        (Side::Black, PieceKind:: Bishop) => "b",
+                        (Side::Black, PieceKind:: Knight) => "n",
+                        (Side::Black, PieceKind:: Pawn) => "p",
+                    };
+                }
+                else {
+                    // another empty square
+                    empty_squares += 1;
+                }
+            }
+            // indicate a new rank
+            if i < 7 {
+                if empty_squares > 0 {
+                    res += &empty_squares.to_string();
+                    empty_squares = 0;
+                }
+                res += "/";
+            }
+        }
+
+        // the side to move
+        res += match self.side_to_move { 
+            Side::White => " w ",
+            Side::Black => " b ",
+        };
+
+        // castling rights
+        if self.white_short_castle {
+            res += "K"
+        }
+        if self.white_long_castle {
+            res += "Q"
+        }
+        if !self.white_short_castle && !self.white_long_castle {
+            res += "-";
+        }
+
+        if self.black_short_castle {
+            res += "k"
+        }
+        if self.black_long_castle {
+            res += "q"
+        }
+        if !self.black_short_castle && !self.black_long_castle {
+            res += "-";
+        }
+
+        res += " ";
+
+        // en passant
+        if let Some((from, to)) = self.en_passant {
+            // if there was an en-passant made, then we just need to make sure that there is another pawn in place
+            
+
+            if let Some(piece) = self.piece_arr[((from  + to)/2 - 1) as usize] && self.stays_in_bounds((from + to)/2, (0,-1)).is_some() {
+                if let Some(pawn) = self.piece_arr[to as usize] {
+                    if piece.kind == PieceKind::Pawn && piece.side.opposite() == pawn.side && pawn.kind == piece.kind {
+                        res += &['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'][(to%8) as usize].to_string();
+                        res += &(8 - (from/8 + to/8)/2).to_string();
+                    }
+                }                
+            }
+            else if let Some(piece) = self.piece_arr[((from  + to)/2 + 1) as usize] && self.stays_in_bounds((from + to)/2, (0,1)).is_some()  {
+                if let Some(pawn) = self.piece_arr[to as usize] {
+                    if piece.kind == PieceKind::Pawn && piece.side.opposite() == pawn.side && pawn.kind == piece.kind {
+                        res += &['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'][(to%8) as usize].to_string();
+                        res += &(8 - (from/8 + to/8)/2).to_string();
+                    }
+                }
+            }
+            else {
+                res += "-";
+            }
+
+        }
+        else {
+            res += "-";
+        }
+
+        // the halfmove clock
+        res += " ";
+        res += &self.half_moves.to_string();
+
+        // the fullmove clock
+        res += " ";
+        res += &self.full_moves.to_string();
+
+        return res;
+    }
+
 
 }
 
@@ -1063,6 +1281,9 @@ impl BoardState {
         self.black_king = 4;
         self.material = 0.0;
         self.total_pieces = 32;
+
+        self.half_moves = 0;
+        self.full_moves = 1;
     }
 
     fn starting_pieces(&self) -> [Option<Piece>;64] {
@@ -1158,7 +1379,17 @@ impl Move {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ScoredMove {
     pub chess_move: Move,
-    pub score: i16,
+    pub score: f64,
+}
+
+impl ScoredMove {
+    pub fn get_from(&self) -> i8 {
+        return self.chess_move.get_from();
+    }
+
+    pub fn get_to(&self) -> i8 {
+        return self.chess_move.get_to();
+    }
 }
 
 // saves the data that is necessary to revert to the previous state [FIXED]
@@ -1176,6 +1407,8 @@ pub struct UnMove {
     pub black_king: i8,
     pub material: f64,
     pub total_pieces: u8,
+    pub half_moves: usize,
+    pub full_moves: usize,
 }
 
 // the Piece structure, for now rather simple [FIXED]

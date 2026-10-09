@@ -6,34 +6,35 @@ use crate::chess::{
     Side,
 };
 
-
 const KING_PROXIMITY: f64 = 0.05;
-const KING_CONTROL: f64 = 1.;
+const KING_CONTROL: f64 = 0.8;
 const KING_ACTIVITY_TABLE: [f64;64] = [1.;64];
-const KING_SAFETY_TABLE: [f64;64] = [1.;64];
+const KING_SAFETY_TABLE: [f64;64] = king_safety_array();
+const KING_WEIGHT: f64 = 0.9; 
 
 const PAWN_ADVANCE: f64 = 0.04;
-const PAWN_CONTROL: f64 = 1.0;
+const PAWN_CONTROL: f64 = 1.5;
 
-const KNIGHT_CONTROL: f64 = 1.0;
-const KNIGHT_ATTACK: f64 =  1.0;
-const KNIGHT_DEFENCE: f64 = 1.0;
+const KNIGHT_CONTROL: f64 = 0.9;
+const KNIGHT_ATTACK: f64 =  0.9;
+const KNIGHT_DEFENCE: f64 = 0.9;
 
-const BISHOP_CONTROL: f64 = 1.1;
-const BISHOP_ATTACK: f64 =  1.1;
-const BISHOP_DEFENCE: f64 = 1.1;
+const BISHOP_CONTROL: f64 = 1.0;
+const BISHOP_ATTACK: f64 =  1.0;
+const BISHOP_DEFENCE: f64 = 1.0;
 
-const ROOK_CONTROL: f64 = 1.0;
-const ROOK_ATTACK: f64 =  1.0;
-const ROOK_DEFENCE: f64 = 1.0;
+const ROOK_CONTROL: f64 = 0.9;
+const ROOK_ATTACK: f64 =  0.9;
+const ROOK_DEFENCE: f64 = 0.9;
 
 const QUEEN_CONTROL: f64 = 0.2;
 const QUEEN_ATTACK: f64 =  0.2;
 const QUEEN_DEFENCE: f64 = 0.2;
 
-const INFLUENCE_COEFF: f64 = 0.01;
+const INFLUENCE_COEFF: f64 = 0.1;
 const CONTROL_WEIGHT_ARRAY: [f64; 64] = control_weight_array();
-const CENTER_WEIGHT: f64 = 5.;
+const CENTER_WEIGHT: f64 = 1.;
+const ENDGAME_MATERIAL: f64 = 4.;
 
 const fn control_weight_array() -> [f64;64] {
     let mut res: [f64; 64]= [0.; 64];
@@ -42,7 +43,29 @@ const fn control_weight_array() -> [f64;64] {
     loop {
         let mut j = 0;
         loop {
-            res[(i*8 + j) as usize] = 1. + CENTER_WEIGHT*((7. - i as f64)*(i as f64) + (7. - j as f64)*(j as f64))/12.;
+            res[(i*8 + j) as usize] = CENTER_WEIGHT*((7. - i as f64)*(i as f64) + (7. - j as f64)*(j as f64))/24.;
+            j += 1;
+            if j > 7 {
+                break;
+            }
+        }
+        i += 1;
+        if i > 7 {
+            break;
+        }
+    }
+
+    return res;
+}
+
+const fn king_safety_array() -> [f64;64] {
+    let mut res: [f64; 64]= [0.; 64];
+    let mut i = 0;
+    
+    loop {
+        let mut j = 0;
+        loop {
+            res[(i*8 + j) as usize] = 1. - KING_WEIGHT*((7. - i as f64)*(i as f64) + 0.5 * (7. - j as f64)*(j as f64))/18.;
             j += 1;
             if j > 7 {
                 break;
@@ -64,11 +87,12 @@ impl BoardState {
     // Evaluates a position at face value [FIXED]
     pub fn evaluation(&self) -> f64 {
 
-        // the material balance
-        let mut res: f64 = self.material;
 
         //a weight for the phase of the game
         let endgame_weight: f64 = self.phase_weight();
+
+        // the material balance is more important later in the game
+        let mut res: f64 = self.material * (1. + ENDGAME_MATERIAL * endgame_weight);
 
         // the total control exerted on the board
         // also calculates other things related to the result for the sake of optimization
@@ -79,6 +103,10 @@ impl BoardState {
             
             //the net control on this square
             let mut c: f64 = control[i];
+
+            if c == 0.0 {
+                continue;
+            }
             
             // control should be more valueable when it is closer to the opposing king,
             // when there are fewer pieces on the board
@@ -130,15 +158,15 @@ impl BoardState {
                         let directions: [(i8, i8); 8] = [(-1,-1), (-1, 0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1)];
                         for d in directions {
                             if let Some(destination) = self.stays_in_bounds(sq, d) {
-                                control[destination as usize] += sign*KING_CONTROL;
+                                control[destination as usize] += sign * KING_CONTROL * (KING_ACTIVITY_TABLE[sq as usize] * endgame_weight);
                             }
                         }
 
                         // the King is valuable when there are no opposing pieces nearby
 
                         // middlegame and endgame positioning for the king:
-                        *res += sign * KING_ACTIVITY_TABLE[sq as usize] * endgame_weight;
-                        *res += sign * KING_SAFETY_TABLE[sq as usize] * (1.0 - endgame_weight);
+                        *res += sign * KING_ACTIVITY_TABLE[sq as usize] * endgame_weight * endgame_weight;
+                        *res += sign * KING_SAFETY_TABLE[sq as usize] * (1.0 - endgame_weight * endgame_weight);
 
                     },
                     PieceKind::Queen => {
@@ -149,8 +177,8 @@ impl BoardState {
                             let mut pos: i8 = sq;
                             loop {
                                 if let Some(destination) = self.stays_in_bounds(pos, d) {
-                                    if self.is_piece_at(pos) {
-                                        if !self.is_side_at(pos, piece.side) {
+                                    if self.is_piece_at(destination) {
+                                        if !self.is_side_at(destination, piece.side) {
                                             control[destination as usize] += sign*QUEEN_ATTACK;
                                         }
                                         else {
@@ -175,8 +203,8 @@ impl BoardState {
                             let mut pos: i8 = sq;
                             loop {
                                 if let Some(destination) = self.stays_in_bounds(pos, d) {
-                                    if self.is_piece_at(pos) {
-                                        if !self.is_side_at(pos, piece.side) {
+                                    if self.is_piece_at(destination) {
+                                        if !self.is_side_at(destination, piece.side) {
                                             control[destination as usize] += sign*ROOK_ATTACK;
                                         }
                                         else {
@@ -201,8 +229,8 @@ impl BoardState {
                             let mut pos: i8 = sq;
                             loop {
                                 if let Some(destination) = self.stays_in_bounds(pos, d) {
-                                    if self.is_piece_at(pos) {
-                                        if !self.is_side_at(pos, piece.side) {
+                                    if self.is_piece_at(destination) {
+                                        if !self.is_side_at(destination, piece.side) {
                                             control[destination as usize] += sign*BISHOP_ATTACK;
                                         }
                                         else {
@@ -292,17 +320,15 @@ impl BoardState {
 
         for piece in self.piece_arr.iter().flatten() {
             phase += match piece.kind {
-                PieceKind::Queen => 4.0,
-                PieceKind::Rook => 2.0,
+                PieceKind::Queen => 6.0,
+                PieceKind::Rook => 3.0,
                 PieceKind::Bishop |PieceKind::Knight => 1.0,
                 PieceKind::Pawn |PieceKind::King => 0.0,
             };
         }
 
-        // Starting phase:
-        // 2 queens * 4 + 4 rooks * 2
-        // + 4 bishops * 1 + 4 knights * 1 = 24.
-        return 1.0 - ((phase / 24.0) as f64).clamp(0.0, 1.0);
+        // Starting phase: 2 queens * 6 + 4 rooks * 3 + 4 bishops * 1 + 4 knights * 1 = 32.
+        return 1.0 - ((phase / 32.0) as f64).clamp(0.0, 1.0);
     }
 
 }

@@ -1,5 +1,6 @@
 use macroquad::prelude::*;
 use std::collections::HashMap;
+use polyglot_book_rs::PolyglotBook;
  
 mod chess;
 mod analysis;
@@ -7,6 +8,7 @@ mod analysis;
 use crate::chess::{
     coordinates_to_move,
     BoardState,
+    ScoredMove,
     Move,
     Piece,
     PieceKind,
@@ -17,9 +19,8 @@ use crate::analysis::{
     AnalysisNode,
     AnalysisTree,
     Solved,
+    mc_to_eval,
 };
-
-//mod analysis;
 
 // for appearence
 const BACKGROUND_COLOR: Color = Color::new(81.0/256.0, 92.0/256.0, 81.0/256.0, 0.2);
@@ -43,7 +44,7 @@ const COMPUTER_TIME_FRIEND: f64 = 25./1000.;
 const COMPUTER_TIME_ON_PLAYER: f64 = 15./1000.;
 const COMPUTER_TIME_ON_COMPUTER: f64 = 45./1000.;
 const MAX_VISITS: usize = 10_000_000;
-//const MIN_VISITS: usize = 1_000_000;
+const BOOK_WEIGHT_EXPONENT: f64 = 1.25;
 
 #[macroquad::main("Rust chess")]
 async fn main() {
@@ -70,6 +71,9 @@ async fn main() {
     // loading the font for various text
     let font = load_ttf_font("assets/fonts/IBMPlexSerif-Medium.ttf").await.unwrap();
     set_default_font(font);
+
+    // loading the opening book
+    let book = PolyglotBook::load("assets/books/gm2001.bin").expect("Could not load opening book");
 
     // the initial game mode
     let mut game_mode: GameMode = GameMode::MainMenu;
@@ -145,6 +149,8 @@ async fn main() {
                                                  black_king: 4,
                                                  material: 0.,
                                                  total_pieces: 32,
+                                                 half_moves: 0,
+                                                 full_moves: 1,
                                                 };
     
     /*
@@ -166,7 +172,7 @@ async fn main() {
             visits: 0,
             total_value: 0.,
             minimax_value: None,
-            m: Move::Standard(-1,-1), // the move that led here, the one for the root does not matter
+            m: ScoredMove { chess_move: Move::Standard(-1,-1), score: 0. }, // the move that led here, the one for the root does not matter
             s: Side::White, // the side whose turn it is now
         },
         board_state_backup: board_state.clone(),
@@ -185,6 +191,8 @@ async fn main() {
     buttons.insert("evaluation", spawn_evaluation_button());
     buttons.insert("perspective", spawn_change_perspective_button());
     buttons.insert("clear board", spawn_clear_board_button());
+    buttons.insert("reset board", spawn_reset_board_button());
+    buttons.insert("show analysis", spawn_show_analysis_button());
     buttons.insert("select side", spawn_select_side_button());
 
     buttons.insert("white mode", spawn_white_mode_button());
@@ -296,6 +304,40 @@ async fn main() {
                 }
                 selected_square = None;
             }
+            else if buttons["reset board"].mouse_is_on() {
+
+                // clear the board
+                board_state.to_starting_position();
+                analysis_tree.reset_to(&board_state);
+
+                // modify the turn button
+                match board_state.side_to_move {
+                    Side::White => {
+                        buttons.get_mut("select side").expect("No select side button").text = "White to move".to_string();
+                        buttons.get_mut("select side").expect("No select side button").color = WHITE;
+                        buttons.get_mut("select side").expect("No select side button").text_color = BLACK;
+                    },
+                    Side::Black => {
+                        buttons.get_mut("select side").expect("No select side button").text = "Black to move".to_string();
+                        buttons.get_mut("select side").expect("No select side button").color = BLACK;
+                        buttons.get_mut("select side").expect("No select side button").text_color = WHITE;
+                    }
+                }
+
+                // un-highlight all squares
+                for file in 0..8 {
+                    for rank in 0..8 {
+                        squares[file as usize][rank as usize].highlight = false;
+                    }
+                }
+
+                for i in 0..2 {
+                    for j in 0..5 {
+                        dummy_squares[i as usize][j as usize].highlight = false;
+                    }
+                }
+                selected_square = None;
+            }
             else if buttons["select side"].mouse_is_on() {
 
                 // modify the board
@@ -330,6 +372,38 @@ async fn main() {
                 }
                 selected_square = None;
             }
+            else if buttons["white short castle"].mouse_is_on() {
+                // modify the board
+                board_state.white_short_castle = true;
+                analysis_tree.reset_to(&board_state);
+                selected_square = None;
+            }
+            else if buttons["white long castle"].mouse_is_on() {
+                // modify the board
+                board_state.white_long_castle = true;
+                analysis_tree.reset_to(&board_state);
+                selected_square = None;
+            }
+            else if buttons["black short castle"].mouse_is_on() {
+                // modify the board
+                board_state.black_short_castle = true;
+                analysis_tree.reset_to(&board_state);
+                selected_square = None;
+            }
+            else if buttons["black long castle"].mouse_is_on() {
+                // modify the board
+                board_state.black_long_castle = true;
+                analysis_tree.reset_to(&board_state);
+                selected_square = None;
+            }
+            else if buttons["show analysis"].mouse_is_on() {
+                // show the analysis
+                analysis_tree.see_analysis();
+            }
+
+            // remove any result announcement if it is there
+            buttons.get_mut("result window").expect("No result window").visible = false;
+            buttons.get_mut("result window").expect("No result window").text = "".to_string();
 
         }
 
@@ -376,6 +450,8 @@ async fn main() {
                         buttons.get_mut("evaluation").expect("No menu button").visible = true;
                         buttons.get_mut("perspective").expect("No perspective button").visible = true;
                         buttons.get_mut("clear board").expect("No clear board button").visible = true;
+                        buttons.get_mut("reset board").expect("No reset board button").visible = true;
+                        buttons.get_mut("show analysis").expect("No show analysis button").visible = true;
                         buttons.get_mut("select side").expect("No select side button").visible = true;
 
                         buttons.get_mut("white short castle").expect("No wsc button").visible = true;
@@ -466,18 +542,18 @@ async fn main() {
 
                                 let suggested_move: Move;
                                 if perspective == Side::White {
-                                    suggested_move = coordinates_to_move(&board_state, old_square, clicked_square);
+                                    suggested_move = coordinates_to_move(&mut board_state, old_square, clicked_square);
                                 }
                                 else {
-                                    suggested_move = coordinates_to_move(&board_state, 63 - old_square, 63 - clicked_square);
+                                    suggested_move = coordinates_to_move(&mut board_state, 63 - old_square, 63 - clicked_square);
                                 }
 
                                 if board_state.is_legal_move(&suggested_move) {
-                                    
-                                    board_state.apply_move_unchecked(&suggested_move);
+
+                                    board_state.apply_move_unchecked(&suggested_move);                               
 
                                     // update the analysis tree
-                                    analysis_tree.make_given_move(suggested_move.clone());
+                                    analysis_tree.make_given_move(ScoredMove{chess_move: suggested_move, score: 0.});
 
                                     // un-highlight all squares
                                     for file in 0..8 {
@@ -547,17 +623,18 @@ async fn main() {
                     if get_time() - computer_ref_time > COMPUTER_THINK {
 
                         // if the computer has a legal move to play, then do so
-                        if let Some(index) = analysis_tree.root.get_best_move() {
+                        if let Some(suggested_move) = analysis_tree.get_best_move(&book) {
                             // make the move on the chess board
-                            let suggested_move = analysis_tree.root.children[index].m.clone();
                             let old_square = suggested_move.get_from();
                             let new_square = suggested_move.get_to();
 
                             board_state.apply_move_unchecked(&suggested_move);
 
                             // update the analysis tree
-                            println!("Visits: {}. Evaluation: {:.2}", analysis_tree.get_visits(), analysis_tree.root.get_value());
-                            analysis_tree.make_given_move(suggested_move);
+                            //println!("Visits: {}. Evaluation: {:.2}", analysis_tree.get_visits(), analysis_tree.root.get_value());
+                            //analysis_tree.see_analysis();
+
+                            analysis_tree.make_given_move(ScoredMove{chess_move: suggested_move, score: 0.});
 
                             // un-highlight all squares
                             for file in 0..8 {
@@ -604,7 +681,6 @@ async fn main() {
                     }
 
                     // catching the clicking of one of the dummy pieces
-                    
                     for i in 0..2 {
                         for j in 0..5 {
                             if dummy_squares[i][j].mouse_is_on() {
@@ -635,24 +711,22 @@ async fn main() {
                                 if old_square < 64 && clicked_square < 64 {
 
                                     // this amounts to a regular move being attempted
-
                                     // attempt to make the suggested move on the board if it is the player's move     
                                     let suggested_move: Move;
 
                                     if perspective == Side::White {
-                                        suggested_move = coordinates_to_move(&board_state, old_square, clicked_square);
+                                        suggested_move = coordinates_to_move(&mut board_state, old_square, clicked_square);
                                     }
                                     else {
-                                        suggested_move = coordinates_to_move(&board_state, 63 - old_square, 63 - clicked_square);
+                                        suggested_move = coordinates_to_move(&mut board_state, 63 - old_square, 63 - clicked_square);
                                     }
 
                                     if board_state.is_legal_move(&suggested_move) {
-                                        
                                         // if this move is legal, apply it in the usual way
                                         board_state.apply_move_unchecked(&suggested_move);
 
                                         // update the analysis tree
-                                        analysis_tree.make_given_move(suggested_move.clone());
+                                        analysis_tree.make_given_move(ScoredMove{chess_move: suggested_move, score: 0.});
 
                                         // un-highlight all squares
                                         for file in 0..8 {
@@ -671,11 +745,10 @@ async fn main() {
                                         computer_ref_time = get_time();
                                     }
                                     else {
-                                        // if the move is not legal, then still make it on the board
-                                        board_state.apply_move_unchecked(&suggested_move);
-
-                                        // but the analysis tree has to be reset this time
-                                        analysis_tree.reset_to(&board_state);
+                                        // if the move is not legal, then apply it as just a relocation
+                                        if board_state.relocate_piece(suggested_move.get_from(), suggested_move.get_to()) {
+                                            analysis_tree.reset_to(&board_state);
+                                        }
 
                                         // un-highlight all squares
                                         for file in 0..8 {
@@ -695,8 +768,11 @@ async fn main() {
                                 }
                                 else if old_square > 63 && clicked_square < 64 {
                                     // this means that a dummy square should be placed on the board
-                                    board_state.add_piece(clicked_square, Some(dummy_pieces[((old_square - 64)%2) as usize][((old_square - 64)/6) as usize]));
-
+                                    match perspective {
+                                        Side::White => board_state.add_piece(clicked_square, Some(dummy_pieces[((old_square - 64)%2) as usize][((old_square - 64)/6) as usize])),
+                                        Side::Black => board_state.add_piece(63 - clicked_square, Some(dummy_pieces[((old_square - 64)%2) as usize][((old_square - 64)/6) as usize])),
+                                    };
+                                    
                                     // and the analysis should be restarted
                                     analysis_tree.reset_to(&board_state);
                                     
@@ -768,7 +844,7 @@ async fn main() {
 
                                     // and highlight the new
                                     selected_square = Some(clicked_square);
-                                    dummy_squares[((old_square - 64)%2) as usize][((old_square - 64)/6) as usize].highlight = true;
+                                    dummy_squares[((clicked_square - 64)%2) as usize][((clicked_square - 64)/6) as usize].highlight = true;
                                 }
                                 
                             }
@@ -805,17 +881,17 @@ async fn main() {
 
         // showing the evaluation if it is to be shown
         if buttons["evaluation"].text != "Show evaluation".to_string() {
-            if let Some(m) = analysis_tree.get_best_move() {
+            if let Some(m) = analysis_tree.get_best_move(&book) {
 
                 let evaluation_text = if let Some(solved) = analysis_tree.root.solved {
                     match solved {
                         Solved::Draw => "0.00",
-                        Solved::Win(winnner) if winnner == Side::White => "W",
+                        Solved::Win(winner) if winner == Side::White => "W",
                         _ => "B"
                     }
                 }
                 else {
-                    &((analysis_tree.root.combined_value()*100.).round()/100.).to_string()
+                    &((mc_to_eval(analysis_tree.root.combined_value()) * 100.).round()/100.).to_string()
                 };
 
 
@@ -847,6 +923,20 @@ async fn main() {
             }
         }
 
+        // modify the select side button
+        match board_state.side_to_move {
+            Side::White => {
+                buttons.get_mut("select side").expect("No select side button").text = "White to move".to_string();
+                buttons.get_mut("select side").expect("No select side button").color = WHITE;
+                buttons.get_mut("select side").expect("No select side button").text_color = BLACK;
+            },
+            Side::Black => {
+                buttons.get_mut("select side").expect("No select side button").text = "Black to move".to_string();
+                buttons.get_mut("select side").expect("No select side button").color = BLACK;
+                buttons.get_mut("select side").expect("No select side button").text_color = WHITE;
+            }
+        }
+
         // draw the state of affairs
         draw_screen(&game_mode, &board_state, &squares, &perspective, &buttons, &piece_textures, &dummy_squares, &dummy_pieces);
         next_frame().await
@@ -863,16 +953,12 @@ fn perft(board: &mut BoardState, depth: u32) -> u64 {
     let legal_moves = board.get_legal_moves();
     let mut nodes = 0;
 
-    for scored_move in legal_moves {
+    for m in legal_moves {
 
-        let unmove = board.apply_move_unchecked(&scored_move.chess_move);
+        let unmove = board.apply_move_unchecked(&m);
 
         nodes += perft(board, depth - 1);
-        assert!(
-            board.un_move_unchecked(unmove),
-            "Failed to unmake move: {:?}",
-            scored_move
-        );
+        assert!(board.un_move_unchecked(unmove), "Failed to unmake move: {:?}",m);
     }
     nodes
 }
@@ -1358,6 +1444,38 @@ fn spawn_clear_board_button() -> Button {
         width: 200.,
         height: 50.,
         text: String::from("Clear board"),
+        text_size: FONT_SIZE/2,
+        text_centered: true,
+        color: BUTTON_COLOR,
+        text_color: BUTTON_TEXT_COLOR,
+        visible: false,
+        shaded: false,
+    }
+}
+
+fn spawn_reset_board_button() -> Button {
+    Button {
+        relative_x: 0.01,
+        relative_y: 0.35,
+        width: 200.,
+        height: 50.,
+        text: String::from("Reset board"),
+        text_size: FONT_SIZE/2,
+        text_centered: true,
+        color: BUTTON_COLOR,
+        text_color: BUTTON_TEXT_COLOR,
+        visible: false,
+        shaded: false,
+    }
+}
+
+fn spawn_show_analysis_button() -> Button {
+    Button {
+        relative_x: 0.01,
+        relative_y: 0.25,
+        width: 200.,
+        height: 50.,
+        text: String::from("Show analysis"),
         text_size: FONT_SIZE/2,
         text_centered: true,
         color: BUTTON_COLOR,
