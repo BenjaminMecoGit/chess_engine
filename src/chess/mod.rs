@@ -1,5 +1,6 @@
 const MAX_MOVES: usize = 230;
-
+const HAS_CASTLED_WEIGHT: f64 = 0.4;
+ 
 use arrayvec::ArrayVec;
 
 pub type MoveList = ArrayVec<Move, MAX_MOVES>;
@@ -202,6 +203,12 @@ impl BoardState {
                 else {
                     self.piece_arr[(*to + 1) as usize] = self.piece_arr[(*to - 2) as usize];
                     self.piece_arr[(*to - 2) as usize] = None;
+                }
+
+                // reward castling 
+                match self.side_to_move {
+                    Side::White => self.material += HAS_CASTLED_WEIGHT,
+                    Side::Black => self.material -= HAS_CASTLED_WEIGHT,
                 }
 
             },
@@ -1380,16 +1387,6 @@ impl Move {
 pub struct ScoredMove {
     pub chess_move: Move,
     pub score: f64,
-}
-
-impl ScoredMove {
-    pub fn get_from(&self) -> i8 {
-        return self.chess_move.get_from();
-    }
-
-    pub fn get_to(&self) -> i8 {
-        return self.chess_move.get_to();
-    }
 }
 
 // saves the data that is necessary to revert to the previous state [FIXED]

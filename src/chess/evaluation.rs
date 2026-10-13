@@ -4,13 +4,24 @@ use crate::chess::{
     //Piece,
     PieceKind,
     Side,
-};
+}; 
 
 const KING_PROXIMITY: f64 = 0.05;
-const KING_CONTROL: f64 = 0.8;
+const KING_CONTROL: f64 = 0.5;
 const KING_ACTIVITY_TABLE: [f64;64] = [1.;64];
-const KING_SAFETY_TABLE: [f64;64] = king_safety_array();
-const KING_WEIGHT: f64 = 0.9; 
+const KING_SAFETY_TABLE: [f64;64] =[
+    1., 1.3, 1.3, 1., 1., 1., 1.3, 1.,
+    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+    1., 1.3, 1.3, 1., 1., 1., 1.3, 1.,
+    ];
+const KING_WEIGHT: f64 = 2.0; 
+const CASTLING_RIGHT_VALUE: f64 = 0.0;
+
 
 const PAWN_ADVANCE: f64 = 0.04;
 const PAWN_CONTROL: f64 = 1.5;
@@ -58,41 +69,26 @@ const fn control_weight_array() -> [f64;64] {
     return res;
 }
 
-const fn king_safety_array() -> [f64;64] {
-    let mut res: [f64; 64]= [0.; 64];
-    let mut i = 0;
-    
-    loop {
-        let mut j = 0;
-        loop {
-            res[(i*8 + j) as usize] = 1. - KING_WEIGHT*((7. - i as f64)*(i as f64) + 0.5 * (7. - j as f64)*(j as f64))/18.;
-            j += 1;
-            if j > 7 {
-                break;
-            }
-        }
-        i += 1;
-        if i > 7 {
-            break;
-        }
-    }
-
-    return res;
-}
-
-
 // methods for evaluating a position at face value [FIXED]
 impl BoardState {
 
     // Evaluates a position at face value [FIXED]
     pub fn evaluation(&self) -> f64 {
 
-
         //a weight for the phase of the game
         let endgame_weight: f64 = self.phase_weight();
 
         // the material balance is more important later in the game
         let mut res: f64 = self.material * (1. + ENDGAME_MATERIAL * endgame_weight);
+
+        // valuing having castling rights
+        if self.white_short_castle || self.white_long_castle {
+            res += CASTLING_RIGHT_VALUE;
+        }
+
+        if self.black_short_castle || self.black_long_castle {
+            res -= CASTLING_RIGHT_VALUE;
+        }
 
         // the total control exerted on the board
         // also calculates other things related to the result for the sake of optimization
@@ -155,18 +151,21 @@ impl BoardState {
                 match piece.kind {
                     PieceKind::King => {
 
+                        // the positioning of thing, this is mostly relevant in the endgame
                         let directions: [(i8, i8); 8] = [(-1,-1), (-1, 0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1)];
+                        let king_activity_weight = endgame_weight.powi(3);
+                        
                         for d in directions {
                             if let Some(destination) = self.stays_in_bounds(sq, d) {
-                                control[destination as usize] += sign * KING_CONTROL * (KING_ACTIVITY_TABLE[sq as usize] * endgame_weight);
+                                control[destination as usize] += sign * KING_CONTROL * (KING_ACTIVITY_TABLE[sq as usize] * king_activity_weight);
                             }
                         }
 
-                        // the King is valuable when there are no opposing pieces nearby
-
-                        // middlegame and endgame positioning for the king:
-                        *res += sign * KING_ACTIVITY_TABLE[sq as usize] * endgame_weight * endgame_weight;
-                        *res += sign * KING_SAFETY_TABLE[sq as usize] * (1.0 - endgame_weight * endgame_weight);
+                        // finally the positioning of the king, this is relevant in the opening and middlegame,
+                        // less in the endgame
+                        
+                        // King safety on the back rank
+                        *res += sign * KING_WEIGHT * KING_SAFETY_TABLE[i as usize] * (1. - king_activity_weight);
 
                     },
                     PieceKind::Queen => {

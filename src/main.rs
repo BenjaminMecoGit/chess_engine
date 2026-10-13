@@ -44,7 +44,6 @@ const COMPUTER_TIME_FRIEND: f64 = 25./1000.;
 const COMPUTER_TIME_ON_PLAYER: f64 = 15./1000.;
 const COMPUTER_TIME_ON_COMPUTER: f64 = 45./1000.;
 const MAX_VISITS: usize = 10_000_000;
-const BOOK_WEIGHT_EXPONENT: f64 = 1.25;
 
 #[macroquad::main("Rust chess")]
 async fn main() {
@@ -357,7 +356,7 @@ async fn main() {
                         buttons.get_mut("select side").expect("No select side button").text_color = WHITE;
                     }
                 }
-
+ 
                 // un-highlight all squares
                 for file in 0..8 {
                     for rank in 0..8 {
@@ -631,7 +630,7 @@ async fn main() {
                             board_state.apply_move_unchecked(&suggested_move);
 
                             // update the analysis tree
-                            //println!("Visits: {}. Evaluation: {:.2}", analysis_tree.get_visits(), analysis_tree.root.get_value());
+                            println!("Visits: {}. ", analysis_tree.root.visits);
                             //analysis_tree.see_analysis();
 
                             analysis_tree.make_given_move(ScoredMove{chess_move: suggested_move, score: 0.});

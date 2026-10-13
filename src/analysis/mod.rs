@@ -1,13 +1,11 @@
 use std::f64::INFINITY;
-use macroquad::rand::gen_range;
-
 
 use polyglot_book_rs::{
     PolyglotBook,
     PolyglotMove,
     PolyglotEntry,
 };
-
+ 
 use polyglot_book_rs::types::Piece as PolyglotPiece;
 
 use crate::chess::{
@@ -22,8 +20,9 @@ const CONFIDENCE_WEIGHT: f64 = 30_000.;
 const MAX_CONFIDENCE: f64 = 0.8;
 const ROLLOUT_DEPTH: usize = 0;
 const UPDATE_DELAY: usize = 500;
+const BOOK_WEIGHT_EXPONENT: f64 = 1.25;
 const DEPTH_THRESHOLD: usize = 2_000;
-const PRIORITY_WEIGHT: f64 = 50.;
+const PRIORITY_WEIGHT: f64 = 70.;
 const C: f64 = 1.4;
 
 pub struct AnalysisTree {
@@ -173,7 +172,7 @@ impl AnalysisTree {
         let total: f64 = 
             book_moves
             .iter()
-            .map(|entry| {entry.weight as f64} )
+            .map(|entry| {(entry.weight as f64).powf(BOOK_WEIGHT_EXPONENT)} )
             .sum();
 
         // choose a random number in the appropriate range
@@ -181,7 +180,7 @@ impl AnalysisTree {
 
         // then choose the move according to choice
         for entry in book_moves {
-            choice -= entry.weight as f64;
+            choice -= (entry.weight as f64).powf(BOOK_WEIGHT_EXPONENT);
             if choice < 0. {
                 return self.board_state_backup.polyglot_move_to_move(entry.chess_move);
             }
@@ -189,11 +188,6 @@ impl AnalysisTree {
 
         return None;
 
-    }
-
-    // the amount of visits in the root
-    pub fn get_visits(&self) -> usize {
-        return self.root.visits;
     }
     
 }
@@ -283,7 +277,16 @@ pub struct AnalysisNode {
 impl AnalysisNode {
 
     // returns a proxy for how deep the analysis has gone
-    pub fn get_depth(&self) -> usize {
+    pub fn get_depth(&self) -> isize {
+
+        if let Some(_) = self.solved {
+            return -1 + self.children
+                .iter()
+                .max_by(|c_1,c_2| {c_1.get_depth().cmp(&c_2.get_depth())})
+                .map(|child| 1 + child.get_depth())
+                .unwrap_or(0);
+        }
+
         if self.visits > DEPTH_THRESHOLD {
             if let Some(index) = self.get_best_move() {
                 return 1 + self.children[index].get_depth();
@@ -292,17 +295,8 @@ impl AnalysisNode {
                 return 1;
             }
         }
-        return 1 + ROLLOUT_DEPTH;
-    }
-
-    // returns the average value from the current traversals
-    pub fn get_value(&self) -> f64 {
-        if self.visits == 0 {
-            return 0.;
-        }
-        else {
-            return mc_to_eval(self.total_value/(self.visits as f64));
-        }
+        return (1 + ROLLOUT_DEPTH) as isize;
+        
     }
 
     // returns the combined evaluation from the minimax search and the MC mean
@@ -378,6 +372,7 @@ impl AnalysisNode {
                 Side::White => 1.,
                 Side::Black => -1.,
             };
+
             let total_visits: usize = self.children.iter().map(|child| child.visits).sum();
 
             let child_visits = child.visits as f64;
@@ -388,7 +383,7 @@ impl AnalysisNode {
 
             let exploration = C * ((self.visits as f64).max(1.0).ln() / child_visits).sqrt();
             //println!("exploitation: {}, priority: {}, exploration: {}", exploitation, priority, exploration);
-            return Some((1. - child.visits as f64 / total_visits as f64) * (1. + priority + exploitation + exploration));
+            return Some((1. - child_visits / total_visits as f64) * (1. + priority + exploitation + exploration));
         }
         else {
             return None;
@@ -730,7 +725,7 @@ fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut beta:
 }
 
 
-const NORMALIZATION: f64 = 15.;
+const NORMALIZATION: f64 = 10.;
 // returns a value normalizes between -1 and 1, given an evaluation
 pub fn eval_to_mc(evaluation: f64) -> f64 {
     return -1. + 2./(1. + (-evaluation/NORMALIZATION).exp());
