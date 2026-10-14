@@ -1,6 +1,17 @@
 use macroquad::prelude::*;
 use std::collections::HashMap;
 use polyglot_book_rs::PolyglotBook;
+
+// package and function for working in different directories
+use std::path::PathBuf;
+
+fn asset_path(relative_path: &str) -> PathBuf {
+    let executable = std::env::current_exe().expect("Could not locate executable");
+
+    let executable_directory = executable.parent().expect("Executable has no parent directory");
+
+    executable_directory.join(relative_path)
+}
  
 mod chess;
 mod analysis;
@@ -53,26 +64,26 @@ async fn main() {
 
     // initializing the textures for the pieces
     let piece_textures = ChessTextures {
-        black_pawn_texture: load_texture("assets/pieces/black_pawn.png").await.expect("Could not load texture"),
-        white_pawn_texture: load_texture("assets/pieces/white_pawn.png").await.expect("Could not load texture"),
-        black_knight_texture: load_texture("assets/pieces/black_knight.png").await.expect("Could not load texture"),
-        white_knight_texture: load_texture("assets/pieces/white_knight.png").await.expect("Could not load texture"),
-        black_bishop_texture: load_texture("assets/pieces/black_bishop.png").await.expect("Could not load texture"),
-        white_bishop_texture: load_texture("assets/pieces/white_bishop.png").await.expect("Could not load texture"),
-        black_rook_texture: load_texture("assets/pieces/black_rook.png").await.expect("Could not load texture"),
-        white_rook_texture: load_texture("assets/pieces/white_rook.png").await.expect("Could not load texture"),
-        black_queen_texture: load_texture("assets/pieces/black_queen.png").await.expect("Could not load texture"),
-        white_queen_texture: load_texture("assets/pieces/white_queen.png").await.expect("Could not load texture"),
-        black_king_texture: load_texture("assets/pieces/black_king.png").await.expect("Could not load texture"),
-        white_king_texture: load_texture("assets/pieces/white_king.png").await.expect("Could not load texture"),
+        black_pawn_texture: load_texture(asset_path("assets/pieces/black_pawn.png").to_str().expect("Asset path is not valid UTF-8")).await.expect("Could not load texture"),
+        white_pawn_texture: load_texture(asset_path("assets/pieces/white_pawn.png").to_str().expect("Asset path is not valid UTF-8")).await.expect("Could not load texture"),
+        black_knight_texture: load_texture(asset_path("assets/pieces/black_knight.png").to_str().expect("Asset path is not valid UTF-8")).await.expect("Could not load texture"),
+        white_knight_texture: load_texture(asset_path("assets/pieces/white_knight.png").to_str().expect("Asset path is not valid UTF-8")).await.expect("Could not load texture"),
+        black_bishop_texture: load_texture(asset_path("assets/pieces/black_bishop.png").to_str().expect("Asset path is not valid UTF-8")).await.expect("Could not load texture"),
+        white_bishop_texture: load_texture(asset_path("assets/pieces/white_bishop.png").to_str().expect("Asset path is not valid UTF-8")).await.expect("Could not load texture"),
+        black_rook_texture: load_texture(asset_path("assets/pieces/black_rook.png").to_str().expect("Asset path is not valid UTF-8")).await.expect("Could not load texture"),
+        white_rook_texture: load_texture(asset_path("assets/pieces/white_rook.png").to_str().expect("Asset path is not valid UTF-8")).await.expect("Could not load texture"),
+        black_queen_texture: load_texture(asset_path("assets/pieces/black_queen.png").to_str().expect("Asset path is not valid UTF-8")).await.expect("Could not load texture"),
+        white_queen_texture: load_texture(asset_path("assets/pieces/white_queen.png").to_str().expect("Asset path is not valid UTF-8")).await.expect("Could not load texture"),
+        black_king_texture: load_texture(asset_path("assets/pieces/black_king.png").to_str().expect("Asset path is not valid UTF-8")).await.expect("Could not load texture"),
+        white_king_texture: load_texture(asset_path("assets/pieces/white_king.png").to_str().expect("Asset path is not valid UTF-8")).await.expect("Could not load texture"),
     };
 
-    // loading the font for various text
-    let font = load_ttf_font("assets/fonts/IBMPlexSerif-Medium.ttf").await.unwrap();
+    // loading the font for various text asset_path("assets/pieces/white_king.png").to_str().expect("Asset path is not valid UTF-8")
+    let font = load_ttf_font(asset_path("assets/fonts/IBMPlexSerif-Medium.ttf").to_str().expect("Asset path is not valid UTF-8")).await.unwrap();
     set_default_font(font);
 
     // loading the opening book
-    let book = PolyglotBook::load("assets/books/gm2001.bin").expect("Could not load opening book");
+    let book = PolyglotBook::load(asset_path("assets/books/gm2001.bin").to_str().expect("Asset path is not valid UTF-8")).expect("Could not load opening book");
 
     // the initial game mode
     let mut game_mode: GameMode = GameMode::MainMenu;
