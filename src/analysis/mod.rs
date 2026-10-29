@@ -147,23 +147,35 @@ impl AnalysisTree {
 impl AnalysisTree {
 
     // the best move in the tree
-    pub fn get_best_move(&self, book: &PolyglotBook) -> Option<Move> {
+    pub fn get_best_move(&self, book: &Option<PolyglotBook>) -> Option<Move> {
 
         // if this is a book entry, then we choose randomly from the book
-        let book_moves = book.get_all_moves_from_fen(&self.board_state_backup.to_fen());
-        if book_moves.len() > 0 {
-            if let Some(m) = self.choose_book_move(book_moves) {
-                return Some(m);
+        if let Some(opening_book) = book {
+            let book_moves = opening_book.get_all_moves_from_fen(&self.board_state_backup.to_fen());
+            if book_moves.len() > 0 {
+                if let Some(m) = self.choose_book_move(book_moves) {
+                    return Some(m);
+                }
+            }
+
+            // otherwise, we return the best move according to the analysis
+            if let Some(index) = self.root.get_best_move() {
+                return Some(self.root.children[index].m.chess_move);
+            }
+            else {
+                return None;
             }
         }
-
-        // otherwise, we return the best move according to the analysis
-        if let Some(index) = self.root.get_best_move() {
-            return Some(self.root.children[index].m.chess_move);
-        }
         else {
-            return None;
+            // If there is no book, we just return the best move according to the analysis
+            if let Some(index) = self.root.get_best_move() {
+                return Some(self.root.children[index].m.chess_move);
+            }
+            else {
+                return None;
+            }
         }
+        
     }
 
     pub fn choose_book_move(&self, book_moves: Vec<PolyglotEntry>) -> Option<Move> {

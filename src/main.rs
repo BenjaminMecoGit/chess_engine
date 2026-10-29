@@ -2,15 +2,30 @@ use macroquad::prelude::*;
 use std::collections::HashMap;
 use polyglot_book_rs::PolyglotBook;
 
+const FRIEND_TRAVERSALS_PER_FRAME: usize = 1000;
+const PLAYER_TRAVERSALS_PER_FRAME: usize = 1000;
+const COMPUTER_TRAVERSALS_PER_FRAME: usize = 3000;
+
 // package and function for working in different directories
 use std::path::PathBuf;
 
 fn asset_path(relative_path: &str) -> PathBuf {
-    let executable = std::env::current_exe().expect("Could not locate executable");
+    {
+        PathBuf::from(relative_path)
+    }
+    /*
+    #[cfg(target_arch = "wasm32")]
+    {
+        let executable = std::env::current_exe()
+            .expect("Could not locate executable");
 
-    let executable_directory = executable.parent().expect("Executable has no parent directory");
+        let executable_directory = executable
+            .parent()
+            .expect("Executable has no parent directory");
 
-    executable_directory.join(relative_path)
+        executable_directory.join(relative_path)
+    }
+    */
 }
  
 mod chess;
@@ -59,6 +74,17 @@ const MAX_VISITS: usize = 10_000_000;
 #[macroquad::main("Rust chess")]
 async fn main() {
 
+    // panic hook
+    std::panic::set_hook(Box::new(|panic_info| {
+        macroquad::logging::error!(
+            "RUST PANIC: {}",
+            panic_info
+        );
+    }));
+
+    // fixing the seed in macroquad
+    macroquad::rand::srand(0x5EED_1234);
+
     // setting window size
     request_new_screen_size(1080.,800.);
 
@@ -83,7 +109,20 @@ async fn main() {
     set_default_font(font);
 
     // loading the opening book
-    let book = PolyglotBook::load(asset_path("assets/books/gm2001.bin").to_str().expect("Asset path is not valid UTF-8")).expect("Could not load opening book");
+    #[cfg(not(target_arch = "wasm32"))]
+    let book = Some(
+        PolyglotBook::load(
+            asset_path("assets/books/gm2001.bin")
+                .to_str()
+                .expect("Asset path is not valid UTF-8"),
+        )
+        .expect("Could not load opening book"),
+    );
+
+    #[cfg(target_arch = "wasm32")]
+    let book: Option<PolyglotBook> = None;
+
+    //let book = PolyglotBook::load(asset_path("assets/books/gm2001.bin").to_str().expect("Asset path is not valid UTF-8")).expect("Could not load opening book");
 
     // the initial game mode
     let mut game_mode: GameMode = GameMode::MainMenu;
@@ -191,7 +230,7 @@ async fn main() {
     // states for the computer game mode
     let mut player_side: Side = Side::White;
     let mut perspective: Side = Side::White;
-    let mut computer_ref_time: f64 = get_time();
+    let mut computer_thinking_time: f64 = 0.0;
     
     let mut buttons: HashMap<&str, Button> = HashMap::new();
     buttons.insert("friend mode", spawn_friend_mode_button());
@@ -226,6 +265,7 @@ async fn main() {
 
     loop {
 
+        computer_thinking_time += get_frame_time() as f64;
         // setting up the background
         clear_background(BACKGROUND_COLOR);
 
@@ -579,7 +619,7 @@ async fn main() {
                                     selected_square = None;
 
                                     // set the checkpoint time for the computer
-                                    computer_ref_time = get_time();
+                                    computer_thinking_time = 0.;
                                 }
                                 else {
                                     // un-highlight all squares
@@ -609,28 +649,31 @@ async fn main() {
 
                 // after having handled all the clicking, we let the computer do some thinking
                 if game_mode == GameMode::Friend {
-                    let starting_time = get_time();
-                    while get_time() - starting_time < COMPUTER_TIME_FRIEND && analysis_tree.root.visits < MAX_VISITS {
-                        analysis_tree.traverse();
-                    }
+                    //let starting_time = get_time();
+                    //while get_time() - starting_time < COMPUTER_TIME_FRIEND && analysis_tree.root.visits < MAX_VISITS {
+                    //    analysis_tree.traverse();
+                    //}
+                    analyze_for_traversals(&mut analysis_tree, FRIEND_TRAVERSALS_PER_FRAME);
                 }
                 else if board_state.side_to_move == player_side {
-                    let starting_time = get_time();
-                    while get_time() - starting_time < COMPUTER_TIME_ON_PLAYER && analysis_tree.root.visits < MAX_VISITS {
-                        analysis_tree.traverse();
-                    }
+                    //let starting_time = get_time();
+                    //while get_time() - starting_time < COMPUTER_TIME_ON_PLAYER && analysis_tree.root.visits < MAX_VISITS {
+                    //    analysis_tree.traverse();
+                    //}
+                    analyze_for_traversals(&mut analysis_tree, PLAYER_TRAVERSALS_PER_FRAME);
                 }
                 else {
 
                     // if it is the computers turn, then we first let it do some thinking
                     
-                    let starting_time = get_time();
-                    while get_time() - starting_time < COMPUTER_TIME_ON_COMPUTER && analysis_tree.root.visits < MAX_VISITS {
-                        analysis_tree.traverse();
-                    }
+                    //let starting_time = get_time();
+                    //while get_time() - starting_time < COMPUTER_TIME_ON_COMPUTER && analysis_tree.root.visits < MAX_VISITS {
+                    //    analysis_tree.traverse();
+                    //}
+                    analyze_for_traversals(&mut analysis_tree, COMPUTER_TRAVERSALS_PER_FRAME);
 
                     // then, when it is time, we let the computer make a move.
-                    if get_time() - computer_ref_time > COMPUTER_THINK {
+                    if computer_thinking_time > COMPUTER_THINK {
 
                         // if the computer has a legal move to play, then do so
                         if let Some(suggested_move) = analysis_tree.get_best_move(&book) {
@@ -752,7 +795,7 @@ async fn main() {
                                         selected_square = None;
 
                                         // set the checkpoint time for the computer
-                                        computer_ref_time = get_time();
+                                        computer_thinking_time = 0.;
                                     }
                                     else {
                                         // if the move is not legal, then apply it as just a relocation
@@ -809,7 +852,7 @@ async fn main() {
                                     }
 
                                     // set the checkpoint time for the computer
-                                    computer_ref_time = get_time();
+                                    computer_thinking_time = 0.;
                                     
                                 } 
                                 else if old_square < 63 && clicked_square > 64{
@@ -880,10 +923,11 @@ async fn main() {
 
                 // after having handled all the clicking, we let the computer do some thinking
                 
-                let starting_time = get_time();
-                while get_time() - starting_time < COMPUTER_TIME_FRIEND && analysis_tree.root.visits < MAX_VISITS {
-                    analysis_tree.traverse();
-                }
+                //let starting_time = get_time();
+                //while get_time() - starting_time < COMPUTER_TIME_FRIEND && analysis_tree.root.visits < MAX_VISITS {
+                //    analysis_tree.traverse();
+                //}
+                analyze_for_traversals(&mut analysis_tree, FRIEND_TRAVERSALS_PER_FRAME);
                 
             },
         }
@@ -953,6 +997,20 @@ async fn main() {
     }
 }
 
+// for web - release
+fn analyze_for_traversals(analysis_tree: &mut AnalysisTree, number_of_traversals: usize) {
+    for _ in 0..number_of_traversals {
+        if analysis_tree.root.visits >= MAX_VISITS {
+            break;
+        }
+
+        if analysis_tree.root.solved.is_some() {
+            break;
+        }
+
+        analysis_tree.traverse();
+    }
+}
 
 // Testing for legality
 fn perft(board: &mut BoardState, depth: u32) -> u64 {
