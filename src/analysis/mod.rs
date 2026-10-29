@@ -21,9 +21,9 @@ const MAX_CONFIDENCE: f64 = 0.8;
 const ROLLOUT_DEPTH: usize = 0;
 const UPDATE_DELAY: usize = 500;
 const BOOK_WEIGHT_EXPONENT: f64 = 1.25;
-const DEPTH_THRESHOLD: usize = 2_000;
-const PRIORITY_WEIGHT: f64 = 40.;
-const C: f64 = 1.4;
+const DEPTH_THRESHOLD: usize = 100;
+const PRIORITY_WEIGHT: f64 = 2.1;
+const C: f64 = 1.50;
 
 pub struct AnalysisTree {
     pub root: AnalysisNode,

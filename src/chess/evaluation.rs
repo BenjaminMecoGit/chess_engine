@@ -20,7 +20,7 @@ const KING_ACTIVITY_TABLE: [f64;64] = [
     ];
 
 const KING_SAFETY_TABLE: [f64;64] = [
-    1.0, 1.3, 1.3, 1.0, 1.0, 1.0, 1.3, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
     0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
     0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
@@ -43,11 +43,14 @@ const PAWN_ADVANCE_TABLE: [f64;64] = [
     1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00,
     1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00,
     ];
-const PAWN_CONTROL: f64 = 1.5;
+const PAWN_CONTROL: f64 = 1.;
+const PAWN_ATTACK: f64 = 1.1;
+const PAWN_DEFEND: f64 = 1.1;
+const PAWN_POSITION: f64 = 0.8;
 
-const KNIGHT_CONTROL: f64 = 0.9;
-const KNIGHT_ATTACK: f64 =  0.9;
-const KNIGHT_DEFENCE: f64 = 0.9;
+const KNIGHT_CONTROL: f64 = 1.0;
+const KNIGHT_ATTACK: f64 =  1.1;
+const KNIGHT_DEFENCE: f64 = 1.1;
 const KNIGHT_ACTIVITY_TABLE: [f64;64] = [
     1.0, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0,
     1.0, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0,
@@ -62,8 +65,8 @@ const KNIGHT_ACTIVITY_TABLE: [f64;64] = [
 
 
 const BISHOP_CONTROL: f64 = 1.0;
-const BISHOP_ATTACK: f64 =  1.0;
-const BISHOP_DEFENCE: f64 = 1.0;
+const BISHOP_ATTACK: f64 =  1.1;
+const BISHOP_DEFENCE: f64 = 1.1;
 const BISHOP_ACTIVITY_TABLE: [f64;64] = [
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
@@ -76,8 +79,8 @@ const BISHOP_ACTIVITY_TABLE: [f64;64] = [
     ];
 
 const ROOK_CONTROL: f64 = 0.9;
-const ROOK_ATTACK: f64 =  0.9;
-const ROOK_DEFENCE: f64 = 0.9;
+const ROOK_ATTACK: f64 =  1.0;
+const ROOK_DEFENCE: f64 = 1.0;
 const ROOK_ACTIVITY_TABLE: [f64;64] = [
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
@@ -90,8 +93,8 @@ const ROOK_ACTIVITY_TABLE: [f64;64] = [
     ];
 
 const QUEEN_CONTROL: f64 = 0.2;
-const QUEEN_ATTACK: f64 =  0.2;
-const QUEEN_DEFENCE: f64 = 0.2;
+const QUEEN_ATTACK: f64 =  0.3;
+const QUEEN_DEFENCE: f64 = 0.3;
 const QUEEN_ACTIVITY_TABLE: [f64;64] = [
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
@@ -208,7 +211,7 @@ impl BoardState {
 
                 let perspective_position: usize = match piece.side {
                     Side::White => i as usize,
-                    Side::Black => (63 - i) as usize,
+                    Side::Black => (i ^ 56) as usize,
                 };
 
                 /* 
@@ -371,7 +374,7 @@ impl BoardState {
 
                         // a more advanced pawn is morevaluable
 
-                        *res += sign * PAWN_ADVANCE_TABLE[perspective_position];   
+                        *res += sign * PAWN_POSITION * PAWN_ADVANCE_TABLE[perspective_position];   
                     },
                 }
             }
