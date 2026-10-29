@@ -8,39 +8,100 @@ use crate::chess::{
 
 const KING_PROXIMITY: f64 = 0.05;
 const KING_CONTROL: f64 = 0.5;
-const KING_ACTIVITY_TABLE: [f64;64] = [1.;64];
-const KING_SAFETY_TABLE: [f64;64] =[
-    1., 1.3, 1.3, 1., 1., 1., 1.3, 1.,
-    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-    1., 1.3, 1.3, 1., 1., 1., 1.3, 1.,
+const KING_ACTIVITY_TABLE: [f64;64] = [
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0,
+    1.0, 1.1, 1.2, 1.2, 1.2, 1.2, 1.1, 1.0,
+    1.0, 1.1, 1.2, 1.3, 1.3, 1.2, 1.1, 1.0,
+    1.0, 1.1, 1.2, 1.3, 1.3, 1.2, 1.1, 1.0,
+    1.0, 1.1, 1.2, 1.2, 1.2, 1.2, 1.1, 1.0,
+    1.0, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     ];
+
+const KING_SAFETY_TABLE: [f64;64] = [
+    1.0, 1.3, 1.3, 1.0, 1.0, 1.0, 1.3, 1.0,
+    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+    0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+    1.0, 1.3, 1.3, 1.0, 1.0, 1.0, 1.3, 1.0,
+    ];
+
 const KING_WEIGHT: f64 = 2.0; 
 const CASTLING_RIGHT_VALUE: f64 = 0.0;
 
-
-const PAWN_ADVANCE: f64 = 0.04;
+const PAWN_ADVANCE_TABLE: [f64;64] = [
+    9.00, 9.00, 9.00, 9.00, 9.00, 9.00, 9.00, 9.00,
+    1.14, 1.24, 1.24, 1.34, 1.34, 1.24, 1.24, 1.14,
+    1.13, 1.23, 1.23, 1.33, 1.33, 1.23, 1.23, 1.12,
+    1.12, 1.22, 1.22, 1.32, 1.32, 1.22, 1.22, 1.11,
+    1.11, 1.21, 1.21, 1.31, 1.31, 1.21, 1.21, 1.11,
+    1.10, 1.20, 1.20, 1.30, 1.30, 1.20, 1.20, 1.10,
+    1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00,
+    1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00,
+    ];
 const PAWN_CONTROL: f64 = 1.5;
 
 const KNIGHT_CONTROL: f64 = 0.9;
 const KNIGHT_ATTACK: f64 =  0.9;
 const KNIGHT_DEFENCE: f64 = 0.9;
+const KNIGHT_ACTIVITY_TABLE: [f64;64] = [
+    1.0, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0,
+    1.0, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0,
+    1.0, 1.1, 1.2, 1.2, 1.2, 1.2, 1.1, 1.0,
+    1.0, 1.1, 1.2, 1.2, 1.2, 1.2, 1.1, 1.0,
+    1.0, 1.1, 1.2, 1.2, 1.2, 1.2, 1.2, 1.0,
+    1.0, 1.1, 1.2, 1.2, 1.2, 1.2, 1.1, 1.0,
+    1.0, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    ];
+
+
 
 const BISHOP_CONTROL: f64 = 1.0;
 const BISHOP_ATTACK: f64 =  1.0;
 const BISHOP_DEFENCE: f64 = 1.0;
+const BISHOP_ACTIVITY_TABLE: [f64;64] = [
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    ];
 
 const ROOK_CONTROL: f64 = 0.9;
 const ROOK_ATTACK: f64 =  0.9;
 const ROOK_DEFENCE: f64 = 0.9;
+const ROOK_ACTIVITY_TABLE: [f64;64] = [
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    ];
 
 const QUEEN_CONTROL: f64 = 0.2;
 const QUEEN_ATTACK: f64 =  0.2;
 const QUEEN_DEFENCE: f64 = 0.2;
+const QUEEN_ACTIVITY_TABLE: [f64;64] = [
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    ];
 
 const INFLUENCE_COEFF: f64 = 0.1;
 const CONTROL_WEIGHT_ARRAY: [f64; 64] = control_weight_array();
@@ -69,7 +130,7 @@ const fn control_weight_array() -> [f64;64] {
     return res;
 }
 
-// methods for evaluating a position at face value [FIXED]
+// methods for evaluating a position at face value
 impl BoardState {
 
     // Evaluates a position at face value [FIXED]
@@ -89,12 +150,16 @@ impl BoardState {
         if self.black_short_castle || self.black_long_castle {
             res -= CASTLING_RIGHT_VALUE;
         }
+        // castling awards the side with more than the value of having castling rights
 
         // the total control exerted on the board
         // also calculates other things related to the result for the sake of optimization
         let control: [f64;64] = self.control(&mut res, endgame_weight);
    
-        // calculating the net influence, with respect to some positional considerations
+        // calculating the net evaluation using the material, 
+        // castling rights, 
+        // and the positional considerations from the control on the board
+
         for i in 0..64 {
             
             //the net control on this square
@@ -133,10 +198,17 @@ impl BoardState {
 
         for i in 0..64 {
             if let Some(piece) = self.piece_arr[i] {
+
                 let sq = i as i8;
+
                 let sign: f64 = match piece.side {
                     Side::White => 1.,
                     Side::Black => -1.,
+                };
+
+                let perspective_position: usize = match piece.side {
+                    Side::White => i as usize,
+                    Side::Black => (63 - i) as usize,
                 };
 
                 /* 
@@ -157,7 +229,7 @@ impl BoardState {
                         
                         for d in directions {
                             if let Some(destination) = self.stays_in_bounds(sq, d) {
-                                control[destination as usize] += sign * KING_CONTROL * (KING_ACTIVITY_TABLE[sq as usize] * king_activity_weight);
+                                control[destination as usize] += sign * KING_CONTROL * (KING_ACTIVITY_TABLE[perspective_position] * king_activity_weight);
                             }
                         }
 
@@ -178,14 +250,14 @@ impl BoardState {
                                 if let Some(destination) = self.stays_in_bounds(pos, d) {
                                     if self.is_piece_at(destination) {
                                         if !self.is_side_at(destination, piece.side) {
-                                            control[destination as usize] += sign*QUEEN_ATTACK;
+                                            control[destination as usize] += sign * QUEEN_ATTACK * QUEEN_ACTIVITY_TABLE[perspective_position];
                                         }
                                         else {
-                                            control[destination as usize] += sign*QUEEN_DEFENCE;
+                                            control[destination as usize] += sign * QUEEN_DEFENCE * QUEEN_ACTIVITY_TABLE[perspective_position];
                                         }
                                         break;
                                     }
-                                    control[destination as usize] += sign*QUEEN_CONTROL;
+                                    control[destination as usize] += sign * QUEEN_CONTROL * QUEEN_ACTIVITY_TABLE[perspective_position];
                                     pos = destination;
                                 }
                                 else {
@@ -204,14 +276,14 @@ impl BoardState {
                                 if let Some(destination) = self.stays_in_bounds(pos, d) {
                                     if self.is_piece_at(destination) {
                                         if !self.is_side_at(destination, piece.side) {
-                                            control[destination as usize] += sign*ROOK_ATTACK;
+                                            control[destination as usize] += sign * ROOK_ATTACK * ROOK_ACTIVITY_TABLE[perspective_position];
                                         }
                                         else {
-                                            control[destination as usize] += sign*ROOK_DEFENCE;
+                                            control[destination as usize] += sign * ROOK_DEFENCE * ROOK_ACTIVITY_TABLE[perspective_position];
                                         }
                                         break;
                                     }
-                                    control[destination as usize] += sign*ROOK_CONTROL;
+                                    control[destination as usize] += sign * ROOK_CONTROL * ROOK_ACTIVITY_TABLE[perspective_position];
                                     pos = destination;
                                 }
                                 else {
@@ -230,14 +302,14 @@ impl BoardState {
                                 if let Some(destination) = self.stays_in_bounds(pos, d) {
                                     if self.is_piece_at(destination) {
                                         if !self.is_side_at(destination, piece.side) {
-                                            control[destination as usize] += sign*BISHOP_ATTACK;
+                                            control[destination as usize] += sign * BISHOP_ATTACK * BISHOP_ACTIVITY_TABLE[perspective_position];
                                         }
                                         else {
-                                            control[destination as usize] += sign*BISHOP_DEFENCE;
+                                            control[destination as usize] += sign * BISHOP_DEFENCE * BISHOP_ACTIVITY_TABLE[perspective_position];
                                         }
                                         break;
                                     }
-                                    control[destination as usize] += sign*BISHOP_CONTROL;
+                                    control[destination as usize] += sign * BISHOP_CONTROL * BISHOP_ACTIVITY_TABLE[perspective_position];
                                     pos = destination;
                                 }
                                 else {
@@ -254,13 +326,13 @@ impl BoardState {
                             for d in directions {
                                 if let Some(destination) = self.stays_in_bounds(sq, d) {
                                     if !self.is_piece_at(destination as i8) {
-                                        control[destination as usize] += sign*KNIGHT_CONTROL;
+                                        control[destination as usize] += sign * KNIGHT_CONTROL * KNIGHT_ACTIVITY_TABLE[perspective_position];
                                     }
                                     else if !self.is_side_at(destination as i8, piece.side) {
-                                        control[destination as usize] += sign*KNIGHT_ATTACK;
+                                        control[destination as usize] += sign * KNIGHT_ATTACK * KNIGHT_ACTIVITY_TABLE[perspective_position];
                                     }
                                     else {
-                                        control[destination as usize] += sign*KNIGHT_DEFENCE;
+                                        control[destination as usize] += sign * KNIGHT_DEFENCE * KNIGHT_ACTIVITY_TABLE[perspective_position];
                                     }
                                 }
                             }
@@ -298,14 +370,8 @@ impl BoardState {
                         // pawn structure considerations
 
                         // a more advanced pawn is morevaluable
-                        let advancement = match piece.side {
-                            Side::White => (6 - sq / 8).max(0),
-                            Side::Black => (sq / 8 - 1).max(0),
-                        };
 
-                        
-
-                        *res += sign * (advancement as f64) * PAWN_ADVANCE;   
+                        *res += sign * PAWN_ADVANCE_TABLE[perspective_position];   
                     },
                 }
             }

@@ -16,13 +16,13 @@ use crate::chess::{
     PieceKind,
 };
 
-const CONFIDENCE_WEIGHT: f64 = 30_000.;
+const CONFIDENCE_WEIGHT: f64 = 50_000.;
 const MAX_CONFIDENCE: f64 = 0.8;
 const ROLLOUT_DEPTH: usize = 0;
 const UPDATE_DELAY: usize = 500;
 const BOOK_WEIGHT_EXPONENT: f64 = 1.25;
 const DEPTH_THRESHOLD: usize = 2_000;
-const PRIORITY_WEIGHT: f64 = 70.;
+const PRIORITY_WEIGHT: f64 = 40.;
 const C: f64 = 1.4;
 
 pub struct AnalysisTree {
@@ -393,9 +393,9 @@ impl AnalysisNode {
 
             let exploitation = sign * child.combined_value();
 
-            let exploration = C * ((self.visits as f64).max(1.0).ln() / child_visits).sqrt();
+            let exploration = (C + priority) * ((self.visits as f64).max(1.0).ln() / child_visits).sqrt();
             //println!("exploitation: {}, priority: {}, exploration: {}", exploitation, priority, exploration);
-            return Some((1. - child_visits / total_visits as f64) * (1. + priority + exploitation + exploration));
+            return Some((1. - child.visits as f64 / total_visits as f64) * (0.1 + exploitation + exploration));
         }
         else {
             return None;
@@ -436,9 +436,9 @@ impl AnalysisNode {
 
                 let exploitation = sign * child.combined_value();
 
-                let exploration = C * (parent_log / child_visits).sqrt();
+                let exploration = (C + priority) * (parent_log / child_visits).sqrt();
 
-                (index, (1. - child.visits as f64 / total_visits as f64) * (1. + priority + exploitation + exploration))
+                (index, (1. - child.visits as f64 / total_visits as f64) * (0.1 + exploitation + exploration))
             })
             .max_by(|(_, left), (_, right)| { left.total_cmp(right) })
             .map(|(index, _)| index)

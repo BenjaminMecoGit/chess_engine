@@ -2,10 +2,6 @@ use macroquad::prelude::*;
 use std::collections::HashMap;
 use polyglot_book_rs::PolyglotBook;
 
-const FRIEND_TRAVERSALS_PER_FRAME: usize = 1000;
-const PLAYER_TRAVERSALS_PER_FRAME: usize = 1000;
-const COMPUTER_TRAVERSALS_PER_FRAME: usize = 3000;
-
 // package and function for working in different directories
 use std::path::PathBuf;
 
@@ -66,10 +62,14 @@ const SMALL_BOARD_Y: f32 = 0.5;
 
 // for analysis
 const COMPUTER_THINK: f64 = 5.;
-const COMPUTER_TIME_FRIEND: f64 = 25./1000.;
-const COMPUTER_TIME_ON_PLAYER: f64 = 15./1000.;
-const COMPUTER_TIME_ON_COMPUTER: f64 = 45./1000.;
+//const COMPUTER_TIME_FRIEND: f64 = 25./1000.;
+//const COMPUTER_TIME_ON_PLAYER: f64 = 15./1000.;
+//const COMPUTER_TIME_ON_COMPUTER: f64 = 45./1000.;
 const MAX_VISITS: usize = 10_000_000;
+
+const FRIEND_TRAVERSALS_PER_FRAME: usize = 1000;
+const PLAYER_TRAVERSALS_PER_FRAME: usize = 1000;
+const COMPUTER_TRAVERSALS_PER_FRAME: usize = 3000;
 
 #[macroquad::main("Rust chess")]
 async fn main() {
@@ -684,7 +684,7 @@ async fn main() {
                             board_state.apply_move_unchecked(&suggested_move);
 
                             // update the analysis tree
-                            println!("Visits: {}. ", analysis_tree.root.visits);
+                            //println!("Visits: {}. ", analysis_tree.root.visits);
                             //analysis_tree.see_analysis();
 
                             analysis_tree.make_given_move(ScoredMove{chess_move: suggested_move, score: 0.});
