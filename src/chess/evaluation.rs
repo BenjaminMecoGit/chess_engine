@@ -1,6 +1,6 @@
 use crate::chess::{
     BoardState,
-    //Move,
+    Move,
     //Piece,
     PieceKind,
     Side,
@@ -30,23 +30,34 @@ const KING_SAFETY_TABLE: [f64;64] = [
     1.0, 1.3, 1.3, 1.0, 1.0, 1.0, 1.3, 1.0,
     ];
 
-const KING_WEIGHT: f64 = 2.0; 
+const KING_WEIGHT: f64 = 0.5; 
 const CASTLING_RIGHT_VALUE: f64 = 0.0;
 
-const PAWN_ADVANCE_TABLE: [f64;64] = [
-    9.00, 9.00, 9.00, 9.00, 9.00, 9.00, 9.00, 9.00,
-    1.14, 1.24, 1.24, 1.34, 1.34, 1.24, 1.24, 1.14,
-    1.13, 1.23, 1.23, 1.33, 1.33, 1.23, 1.23, 1.12,
-    1.12, 1.22, 1.22, 1.32, 1.32, 1.22, 1.22, 1.11,
-    1.11, 1.21, 1.21, 1.31, 1.31, 1.21, 1.21, 1.11,
-    1.10, 1.20, 1.20, 1.30, 1.30, 1.20, 1.20, 1.10,
-    1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00,
-    1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00,
-    ];
 const PAWN_CONTROL: f64 = 1.;
 const PAWN_ATTACK: f64 = 1.1;
 const PAWN_DEFEND: f64 = 1.1;
+const PAWN_ACTIVITY_TABLE: [f64;64] = [
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    ];
 const PAWN_POSITION: f64 = 0.8;
+const PAWN_ADVANCE_TABLE: [f64;64] = [
+    9.00, 9.00, 9.00, 9.00, 9.00, 9.00, 9.00, 9.00,
+    0.14, 0.24, 0.24, 0.34, 0.34, 0.24, 0.24, 0.14,
+    0.13, 0.23, 0.23, 0.33, 0.33, 0.23, 0.23, 0.12,
+    0.12, 0.22, 0.22, 0.32, 0.32, 0.22, 0.22, 0.11,
+    0.11, 0.21, 0.21, 0.31, 0.31, 0.21, 0.21, 0.11,
+    0.10, 0.20, 0.20, 0.30, 0.30, 0.20, 0.20, 0.10,
+    0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00,
+    0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00,
+    ];
+
 
 const KNIGHT_CONTROL: f64 = 1.0;
 const KNIGHT_ATTACK: f64 =  1.1;
@@ -106,10 +117,11 @@ const QUEEN_ACTIVITY_TABLE: [f64;64] = [
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     ];
 
-const INFLUENCE_COEFF: f64 = 0.1;
+const INFLUENCE_COEFF: f64 = 0.025;
 const CONTROL_WEIGHT_ARRAY: [f64; 64] = control_weight_array();
 const CENTER_WEIGHT: f64 = 1.;
-const ENDGAME_MATERIAL: f64 = 4.;
+const ENDGAME_MATERIAL: f64 = 0.25;
+const MATERIAL_WEIGHT: f64 = 2.0;
 
 const fn control_weight_array() -> [f64;64] {
     let mut res: [f64; 64]= [0.; 64];
@@ -143,7 +155,7 @@ impl BoardState {
         let endgame_weight: f64 = self.phase_weight();
 
         // the material balance is more important later in the game
-        let mut res: f64 = self.material * (1. + ENDGAME_MATERIAL * endgame_weight);
+        let mut res: f64 = MATERIAL_WEIGHT * self.material * (1. + ENDGAME_MATERIAL * endgame_weight);
 
         // valuing having castling rights
         if self.white_short_castle || self.white_long_castle {
@@ -342,38 +354,29 @@ impl BoardState {
                     },
                     PieceKind::Pawn => {
                         
+                        let directions = match piece.side {
+                            Side::White => [(-1,-1), (-1,1)],
+                            Side::Black => [(1,-1), (1,1)],
+                        };
+                        
                         // Control exerted by a pawn
-                        if piece.side == Side::White {
-                            if sq/8 > 0 { 
-                                // capture to the left
-                                if sq%8 > 0 {
-                                    control[(sq - 9) as usize] += sign*PAWN_CONTROL;
+                        for d in directions {
+                            if let Some(destination) = self.stays_in_bounds(sq, d) {
+                                if !self.is_piece_at(destination as i8) {
+                                    control[destination as usize] += sign * PAWN_CONTROL * PAWN_ACTIVITY_TABLE[perspective_position];
                                 }
-
-                                // capture to the right
-                                if sq%8 < 7 {
-                                    control[(sq - 7) as usize] += sign*PAWN_CONTROL;
+                                else if !self.is_side_at(destination as i8, piece.side) {
+                                    control[destination as usize] += sign * PAWN_ATTACK * PAWN_ACTIVITY_TABLE[perspective_position];
                                 }
-                            }
+                                else {
+                                    control[destination as usize] += sign * PAWN_DEFEND * PAWN_ACTIVITY_TABLE[perspective_position];
+                                }
+                            } 
                         }
-                        else {
-                            if sq/8 < 7 { 
-                                // capture to the left
-                                if sq%8 > 0 {
-                                    control[(sq + 7) as usize] += sign*PAWN_CONTROL;
-                                }
 
-                                // capture to the right
-                                if sq%8 < 7 {
-                                    control[(sq + 9) as usize] += sign*PAWN_CONTROL;
-                                }
-                            }
-                        } 
+                        // pawn structure considerations below
 
-                        // pawn structure considerations
-
-                        // a more advanced pawn is morevaluable
-
+                        // a more advanced pawn is more valuable
                         *res += sign * PAWN_POSITION * PAWN_ADVANCE_TABLE[perspective_position];   
                     },
                 }
@@ -383,20 +386,60 @@ impl BoardState {
         return control;
     }
 
+    // returns a priority value for a move, saying how urgently 
+    // one should look at it in the analysis
+    pub fn priority(&mut self, m: &Move) -> f64 {
+
+        let mut res: f64 = 0.;
+        let un_move = self.apply_move_unchecked(m);
+        if self.is_in_check(self.side_to_move) {
+            res += 1000.;
+        }
+        let result = self.un_move_unchecked(un_move);
+        assert!(result, "Un move failed during priority calculation");
+
+        // if a capture, this can only be of an opposing colour anyway
+        if let Some(kind) = self.kind_at(m.get_to()) {
+            res += 10. * match kind {
+                PieceKind::King => 10.,
+                PieceKind::Queen => 9.,
+                PieceKind::Rook => 5.,
+                PieceKind::Bishop => 3.,
+                PieceKind::Knight => 3.,
+                PieceKind::Pawn => 1.,
+            };
+
+            if let Some(kind) = self.kind_at(m.get_from()) {
+                res -= match kind {
+                    PieceKind::King => 10.,
+                    PieceKind::Queen => 9.,
+                    PieceKind::Rook => 5.,
+                    PieceKind::Bishop => 3.,
+                    PieceKind::Knight => 3.,
+                    PieceKind::Pawn => 1.,
+                };
+            } 
+        }
+
+        return res.max(0.);
+
+    }
+
+    // returns an estimate for where in the game we are currently
     fn phase_weight(&self) -> f64 {
         let mut phase = 0.0;
 
         for piece in self.piece_arr.iter().flatten() {
             phase += match piece.kind {
-                PieceKind::Queen => 6.0,
-                PieceKind::Rook => 3.0,
+                PieceKind::Queen => 10.0,
+                PieceKind::Rook => 5.0,
                 PieceKind::Bishop |PieceKind::Knight => 1.0,
                 PieceKind::Pawn |PieceKind::King => 0.0,
             };
         }
 
-        // Starting phase: 2 queens * 6 + 4 rooks * 3 + 4 bishops * 1 + 4 knights * 1 = 32.
-        return 1.0 - ((phase / 32.0) as f64).clamp(0.0, 1.0);
+        // Starting phase: 2 queens * 10 + 4 rooks * 5 + 4 bishops * 1 + 4 knights * 1 = 48.
+        return 1.0 - ((phase / 48.0) as f64).clamp(0.0, 1.0);
     }
 
 }

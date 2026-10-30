@@ -45,13 +45,16 @@ use crate::analysis::{
 };
 
 // for appearence
-const BACKGROUND_COLOR: Color = Color::new(81.0/256.0, 92.0/256.0, 81.0/256.0, 0.2);
-const BUTTON_COLOR: Color = Color::new(20.0/256.0, 29.0/256.0, 38.0/256.0, 1.);
+//const BACKGROUND_COLOR: Color = Color::new(204.0/256.0, 216.0/256.0, 227.0/256.0, 1.);
+const BACKGROUND_COLOR: Color = Color::new(10.0/256.0, 10.0/256.0, 10.0/256.0, 1.);
+const BUTTON_COLOR: Color = Color::new(40.0/256.0, 60.0/256.0, 80.0/256.0, 1.);
+const BUTTON_HOVER_COLOR: Color = Color::new(0.0/256.0, 68.0/256.0, 116.0/256.0, 1.);
 const BUTTON_TEXT_COLOR: Color = WHITE;
 const DARK_SQUARE_COLOR: Color = Color::new(0.0/256.0, 68.0/256.0, 116.0/256.0, 1.);
 const LIGHT_SQUARE_COLOR: Color = Color::new(251.0/256.0, 245.0/256.0, 222.0/256.0, 1.);
-const SQUARE_HIGHLIGHT_COLOR: Color = Color::new(134./256.,204./256.,144./256.,0.86);
+const SQUARE_HIGHLIGHT_COLOR: Color = Color::new(119./256.,207./256.,245./256.,0.86);
 //const SQUARE_ATTACKED_COLOR: Color = Color::new(256./256.,0./256.,0./256.,0.86);
+
 const SQUARE_SIZE: f32 = 80.0;
 const PIECE_SIZE: f32 = 80.0;
 const SMALL_SCALE: f32 = 0.75;
@@ -122,7 +125,7 @@ async fn main() {
     #[cfg(target_arch = "wasm32")]
     let book: Option<PolyglotBook> = None;
 
-    //let book = PolyglotBook::load(asset_path("assets/books/gm2001.bin").to_str().expect("Asset path is not valid UTF-8")).expect("Could not load opening book");
+    let book = None;
 
     // the initial game mode
     let mut game_mode: GameMode = GameMode::MainMenu;
@@ -268,6 +271,18 @@ async fn main() {
         computer_thinking_time += get_frame_time() as f64;
         // setting up the background
         clear_background(BACKGROUND_COLOR);
+
+        // coloring buttons by hovering
+        for (_, but) in &mut buttons {
+            but.color = if but.mouse_is_on() {
+                BUTTON_HOVER_COLOR
+            }
+            else {
+                BUTTON_COLOR
+            };
+        }
+
+
 
         // implementing button behaviors here
         if is_mouse_button_pressed(MouseButton::Left) {
@@ -948,7 +963,6 @@ async fn main() {
                     &((mc_to_eval(analysis_tree.root.combined_value()) * 100.).round()/100.).to_string()
                 };
 
-
                 buttons.get_mut("evaluation").expect("No evaluation button").text = 
                     m.to_text() + 
                     " : " + 
@@ -964,17 +978,23 @@ async fn main() {
 
         // showing the result of the game if there are no legal moves left
         if board_state.get_legal_moves().len() == 0 {
-            buttons.get_mut("result window").expect("No result window").visible = true;
+
+            let but = buttons.get_mut("result window").expect("No result window");
+
+            but.visible = true;
+            but.color = Color::new(0.99, 0.99, 0.99, 1.0);
 
             if board_state.is_in_check(Side::White) {
-                buttons.get_mut("result window").expect("No result window").text = "Black wins".to_string();
+                but.text = "Black wins".to_string();
+                
             }
             else if board_state.is_in_check(Side::Black) {
-                buttons.get_mut("result window").expect("No result window").text = "White wins".to_string();
+                but.text = "White wins".to_string();
             }
             else {
-                buttons.get_mut("result window").expect("No result window").text = "Draw".to_string();
+                but.text = "Draw".to_string();
             }
+           
         }
 
         // modify the select side button
@@ -1411,8 +1431,8 @@ fn spawn_computer_mode_button() -> Button {
 
 fn spawn_black_mode_button() -> Button {
     Button {
-        relative_x: 0.5,
-        relative_y: 0.6,
+        relative_x: 0.55,
+        relative_y: 0.52,
         width: 420.,
         height: 80.,
         text: String::from("Play as black"),
@@ -1427,7 +1447,7 @@ fn spawn_black_mode_button() -> Button {
 
 fn spawn_random_mode_button() -> Button {
     Button {
-        relative_x: 0.5,
+        relative_x: 0.55,
         relative_y: 0.4,
         width: 420.,
         height: 80.,
@@ -1443,8 +1463,8 @@ fn spawn_random_mode_button() -> Button {
 
 fn spawn_white_mode_button() -> Button {
     Button {
-        relative_x: 0.5,
-        relative_y: 0.2,
+        relative_x: 0.55,
+        relative_y: 0.28,
         width: 420.,
         height: 80.,
         text: String::from("Play as white"),

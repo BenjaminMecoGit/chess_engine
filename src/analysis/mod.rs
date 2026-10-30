@@ -22,8 +22,8 @@ const ROLLOUT_DEPTH: usize = 0;
 const UPDATE_DELAY: usize = 500;
 const BOOK_WEIGHT_EXPONENT: f64 = 1.25;
 const DEPTH_THRESHOLD: usize = 100;
-const PRIORITY_WEIGHT: f64 = 2.1;
-const C: f64 = 1.50;
+const PRIORITY_WEIGHT: f64 = 2.3;
+const C: f64 = 1.4;
 
 pub struct AnalysisTree {
     pub root: AnalysisNode,
@@ -737,7 +737,7 @@ fn minimax(board_state: &mut BoardState, depth: usize, mut alpha: f64, mut beta:
 }
 
 
-const NORMALIZATION: f64 = 10.;
+const NORMALIZATION: f64 = 4.;
 // returns a value normalizes between -1 and 1, given an evaluation
 pub fn eval_to_mc(evaluation: f64) -> f64 {
     return -1. + 2./(1. + (-evaluation/NORMALIZATION).exp());

@@ -679,45 +679,6 @@ impl BoardState {
         return false;
     }
 
-    // returns a priority value for a move, saying how urgently 
-    // one should look at it in the analysis [FIXED]
-    pub fn priority(&mut self, m: &Move) -> f64 {
-
-        let mut res: f64 = 0.;
-        let un_move = self.apply_move_unchecked(m);
-        if self.is_in_check(self.side_to_move) {
-            res += 100.;
-        }
-        let result = self.un_move_unchecked(un_move);
-        assert!(result, "Un move failed during priority calculation");
-
-        // if a capture, this can only be of an opposing colour anyway
-        if let Some(kind) = self.kind_at(m.get_to()) {
-            res += 10. * match kind {
-                PieceKind::King => 10.,
-                PieceKind::Queen => 9.,
-                PieceKind::Rook => 5.,
-                PieceKind::Bishop => 3.,
-                PieceKind::Knight => 3.,
-                PieceKind::Pawn => 2.,
-            };
-
-            if let Some(kind) = self.kind_at(m.get_from()) {
-                res -= match kind {
-                    PieceKind::King => 10.,
-                    PieceKind::Queen => 9.,
-                    PieceKind::Rook => 5.,
-                    PieceKind::Bishop => 3.,
-                    PieceKind::Knight => 3.,
-                    PieceKind::Pawn => 1.,
-                };
-            } 
-        }
-
-        return res;
-
-    }
-
     // this unmakes a move, given an un-move
     // returns true if successful [FIXED]
     pub fn un_move_unchecked(&mut self, um: UnMove) -> bool {
