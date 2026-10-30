@@ -1,5 +1,4 @@
 const MAX_MOVES: usize = 230;
-const HAS_CASTLED_WEIGHT: f64 = 0.4;
  
 use arrayvec::ArrayVec;
 
@@ -203,12 +202,6 @@ impl BoardState {
                 else {
                     self.piece_arr[(*to + 1) as usize] = self.piece_arr[(*to - 2) as usize];
                     self.piece_arr[(*to - 2) as usize] = None;
-                }
-
-                // reward castling 
-                match self.side_to_move {
-                    Side::White => self.material += HAS_CASTLED_WEIGHT,
-                    Side::Black => self.material -= HAS_CASTLED_WEIGHT,
                 }
 
             },

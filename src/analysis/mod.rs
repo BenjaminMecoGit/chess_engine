@@ -16,10 +16,10 @@ use crate::chess::{
     PieceKind,
 };
 
-const CONFIDENCE_WEIGHT: f64 = 50_000.;
-const MAX_CONFIDENCE: f64 = 0.8;
+const CONFIDENCE_WEIGHT: f64 = 500.;
+const MAX_CONFIDENCE: f64 = 0.75;
 const ROLLOUT_DEPTH: usize = 0;
-const UPDATE_DELAY: usize = 500;
+const UPDATE_DELAY: usize = 50;
 const BOOK_WEIGHT_EXPONENT: f64 = 1.25;
 const DEPTH_THRESHOLD: usize = 100;
 const PRIORITY_WEIGHT: f64 = 2.3;
@@ -438,7 +438,7 @@ impl AnalysisNode {
 
                 let exploration = (C + priority) * (parent_log / child_visits).sqrt();
 
-                (index, (1. - child.visits as f64 / total_visits as f64) * (0.1 + exploitation + exploration))
+                (index, exploitation + exploration)
             })
             .max_by(|(_, left), (_, right)| { left.total_cmp(right) })
             .map(|(index, _)| index)

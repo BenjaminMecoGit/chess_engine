@@ -31,7 +31,8 @@ const KING_SAFETY_TABLE: [f64;64] = [
     ];
 
 const KING_WEIGHT: f64 = 0.5; 
-const CASTLING_RIGHT_VALUE: f64 = 0.0;
+const CASTLING_RIGHT_VALUE: f64 = 0.3;
+const CASTLED_KING_BONUS: f64 = 0.6;
 
 const PAWN_CONTROL: f64 = 1.;
 const PAWN_ATTACK: f64 = 1.1;
@@ -117,7 +118,7 @@ const QUEEN_ACTIVITY_TABLE: [f64;64] = [
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     ];
 
-const INFLUENCE_COEFF: f64 = 0.025;
+const INFLUENCE_COEFF: f64 = 0.04;
 const CONTROL_WEIGHT_ARRAY: [f64; 64] = control_weight_array();
 const CENTER_WEIGHT: f64 = 1.;
 const ENDGAME_MATERIAL: f64 = 0.25;
@@ -165,7 +166,16 @@ impl BoardState {
         if self.black_short_castle || self.black_long_castle {
             res -= CASTLING_RIGHT_VALUE;
         }
-        // castling awards the side with more than the value of having castling rights
+        // award having castled:
+
+        if self.white_king == 62 || self.white_king == 58 {
+            res += CASTLED_KING_BONUS * (1.0 - endgame_weight);
+        }
+
+        if self.black_king == 6 || self.black_king == 2 {
+            res -= CASTLED_KING_BONUS * (1.0 - endgame_weight);
+        }
+
 
         // the total control exerted on the board
         // also calculates other things related to the result for the sake of optimization
@@ -252,7 +262,7 @@ impl BoardState {
                         // less in the endgame
                         
                         // King safety on the back rank
-                        *res += sign * KING_WEIGHT * KING_SAFETY_TABLE[i as usize] * (1. - king_activity_weight);
+                        *res += sign * KING_WEIGHT * KING_SAFETY_TABLE[perspective_position] * (1. - king_activity_weight);
 
                     },
                     PieceKind::Queen => {
