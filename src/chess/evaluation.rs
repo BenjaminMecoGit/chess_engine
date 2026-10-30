@@ -6,7 +6,7 @@ use crate::chess::{
     Side,
 }; 
 
-const KING_PROXIMITY: f64 = 0.05;
+const KING_PROXIMITY: f64 = 0.01;
 const KING_CONTROL: f64 = 0.5;
 const KING_ACTIVITY_TABLE: [f64;64] = [
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
@@ -31,7 +31,7 @@ const KING_SAFETY_TABLE: [f64;64] = [
     ];
 
 const KING_WEIGHT: f64 = 0.5; 
-const CASTLING_RIGHT_VALUE: f64 = 0.3;
+const CASTLING_RIGHT_VALUE: f64 = 0.2;
 const CASTLED_KING_BONUS: f64 = 0.6;
 
 const PAWN_CONTROL: f64 = 1.;
@@ -47,7 +47,7 @@ const PAWN_ACTIVITY_TABLE: [f64;64] = [
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     ];
-const PAWN_POSITION: f64 = 0.8;
+const PAWN_ADVANCE: f64 = 0.9;
 const PAWN_ADVANCE_TABLE: [f64;64] = [
     9.00, 9.00, 9.00, 9.00, 9.00, 9.00, 9.00, 9.00,
     0.14, 0.24, 0.24, 0.34, 0.34, 0.24, 0.24, 0.14,
@@ -104,9 +104,9 @@ const ROOK_ACTIVITY_TABLE: [f64;64] = [
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     ];
 
-const QUEEN_CONTROL: f64 = 0.2;
-const QUEEN_ATTACK: f64 =  0.3;
-const QUEEN_DEFENCE: f64 = 0.3;
+const QUEEN_CONTROL: f64 = 0.15;
+const QUEEN_ATTACK: f64 =  0.2;
+const QUEEN_DEFENCE: f64 = 0.2;
 const QUEEN_ACTIVITY_TABLE: [f64;64] = [
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
@@ -118,33 +118,9 @@ const QUEEN_ACTIVITY_TABLE: [f64;64] = [
     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
     ];
 
-const INFLUENCE_COEFF: f64 = 0.04;
-const CONTROL_WEIGHT_ARRAY: [f64; 64] = control_weight_array();
-const CENTER_WEIGHT: f64 = 1.;
+const INFLUENCE_COEFF: f64 = 0.07;
 const ENDGAME_MATERIAL: f64 = 0.25;
 const MATERIAL_WEIGHT: f64 = 2.0;
-
-const fn control_weight_array() -> [f64;64] {
-    let mut res: [f64; 64]= [0.; 64];
-    let mut i = 0;
-    
-    loop {
-        let mut j = 0;
-        loop {
-            res[(i*8 + j) as usize] = CENTER_WEIGHT*((7. - i as f64)*(i as f64) + (7. - j as f64)*(j as f64))/24.;
-            j += 1;
-            if j > 7 {
-                break;
-            }
-        }
-        i += 1;
-        if i > 7 {
-            break;
-        }
-    }
-
-    return res;
-}
 
 // methods for evaluating a position at face value
 impl BoardState {
@@ -166,8 +142,8 @@ impl BoardState {
         if self.black_short_castle || self.black_long_castle {
             res -= CASTLING_RIGHT_VALUE;
         }
-        // award having castled:
 
+        // award having castled
         if self.white_king == 62 || self.white_king == 58 {
             res += CASTLED_KING_BONUS * (1.0 - endgame_weight);
         }
@@ -194,7 +170,7 @@ impl BoardState {
                 continue;
             }
             
-            // control should be more valueable when it is closer to the opposing king,
+            // control should be more valuable when it is closer to the opposing king,
             // when there are fewer pieces on the board
             let white_king_distance: f64 = ((self.white_king/8 - (i/8) as i8).abs() + (self.white_king%8 - (i%8) as i8).abs()) as f64;
             let black_king_distance: f64 = ((self.black_king/8 - (i/8) as i8).abs() + (self.black_king%8 - (i%8) as i8).abs()) as f64;
@@ -207,14 +183,12 @@ impl BoardState {
                     white_king_distance
                 };
 
-            c *= 1. + endgame_weight * KING_PROXIMITY / (1. + opposing_king_distance);
-
-            c *= 1.0 + (1.0 - endgame_weight) * CONTROL_WEIGHT_ARRAY[i];
+            c *= 1. + KING_PROXIMITY / (1. + opposing_king_distance);
 
             res += INFLUENCE_COEFF * c;
         }
         
-        return res;
+        return res/MATERIAL_WEIGHT;
     }
 
     fn control(&self, res: &mut f64, endgame_weight: f64) -> [f64; 64] {
@@ -387,7 +361,7 @@ impl BoardState {
                         // pawn structure considerations below
 
                         // a more advanced pawn is more valuable
-                        *res += sign * PAWN_POSITION * PAWN_ADVANCE_TABLE[perspective_position];   
+                        *res += sign * PAWN_ADVANCE * PAWN_ADVANCE_TABLE[perspective_position];   
                     },
                 }
             }
@@ -400,6 +374,7 @@ impl BoardState {
     // one should look at it in the analysis
     pub fn priority(&mut self, m: &Move) -> f64 {
 
+        
         let mut res: f64 = 0.;
         let un_move = self.apply_move_unchecked(m);
         if self.is_in_check(self.side_to_move) {
@@ -432,7 +407,8 @@ impl BoardState {
         }
 
         return res.max(0.);
-
+        
+        
     }
 
     // returns an estimate for where in the game we are currently

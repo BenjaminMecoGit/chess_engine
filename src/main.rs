@@ -65,14 +65,21 @@ const SMALL_BOARD_Y: f32 = 0.5;
 
 // for analysis
 const COMPUTER_THINK: f64 = 5.;
-//const COMPUTER_TIME_FRIEND: f64 = 25./1000.;
-//const COMPUTER_TIME_ON_PLAYER: f64 = 15./1000.;
-//const COMPUTER_TIME_ON_COMPUTER: f64 = 45./1000.;
+const COMPUTER_TIME_FRIEND: f64 = 25./1000.;
+const COMPUTER_TIME_ON_PLAYER: f64 = 15./1000.;
+const COMPUTER_TIME_ON_COMPUTER: f64 = 45./1000.;
 const MAX_VISITS: usize = 10_000_000;
 
 const FRIEND_TRAVERSALS_PER_FRAME: usize = 1000;
 const PLAYER_TRAVERSALS_PER_FRAME: usize = 1000;
 const COMPUTER_TRAVERSALS_PER_FRAME: usize = 3000;
+
+// how analysis works, different on web and locally:
+#[cfg(not(target_arch = "wasm32"))]
+const LOCAL_RELEASE: bool = true;
+
+#[cfg(target_arch = "wasm32")]
+const LOCAL_RELEASE: bool = false;
 
 #[macroquad::main("Rust chess")]
 async fn main() {
@@ -84,6 +91,8 @@ async fn main() {
             panic_info
         );
     }));
+
+    
 
     // fixing the seed in macroquad
     macroquad::rand::srand(0x5EED_1234);
@@ -664,28 +673,42 @@ async fn main() {
 
                 // after having handled all the clicking, we let the computer do some thinking
                 if game_mode == GameMode::Friend {
-                    //let starting_time = get_time();
-                    //while get_time() - starting_time < COMPUTER_TIME_FRIEND && analysis_tree.root.visits < MAX_VISITS {
-                    //    analysis_tree.traverse();
-                    //}
-                    analyze_for_traversals(&mut analysis_tree, FRIEND_TRAVERSALS_PER_FRAME);
+                    if LOCAL_RELEASE {
+                        let starting_time = get_time();
+                        while get_time() - starting_time < COMPUTER_TIME_FRIEND && analysis_tree.root.visits < MAX_VISITS {
+                            analysis_tree.traverse();
+                        }
+                    }
+                    else {
+                        analyze_for_traversals(&mut analysis_tree, FRIEND_TRAVERSALS_PER_FRAME);
+                    }
+                    
+                    
                 }
                 else if board_state.side_to_move == player_side {
-                    //let starting_time = get_time();
-                    //while get_time() - starting_time < COMPUTER_TIME_ON_PLAYER && analysis_tree.root.visits < MAX_VISITS {
-                    //    analysis_tree.traverse();
-                    //}
-                    analyze_for_traversals(&mut analysis_tree, PLAYER_TRAVERSALS_PER_FRAME);
+                    if LOCAL_RELEASE {
+                        let starting_time = get_time();
+                        while get_time() - starting_time < COMPUTER_TIME_ON_PLAYER && analysis_tree.root.visits < MAX_VISITS {
+                            analysis_tree.traverse();
+                        }
+                    }
+                    else {
+                        analyze_for_traversals(&mut analysis_tree, PLAYER_TRAVERSALS_PER_FRAME);
+                    }
                 }
                 else {
 
                     // if it is the computers turn, then we first let it do some thinking
                     
-                    //let starting_time = get_time();
-                    //while get_time() - starting_time < COMPUTER_TIME_ON_COMPUTER && analysis_tree.root.visits < MAX_VISITS {
-                    //    analysis_tree.traverse();
-                    //}
-                    analyze_for_traversals(&mut analysis_tree, COMPUTER_TRAVERSALS_PER_FRAME);
+                    if LOCAL_RELEASE {
+                        let starting_time = get_time();
+                        while get_time() - starting_time < COMPUTER_TIME_ON_COMPUTER && analysis_tree.root.visits < MAX_VISITS {
+                            analysis_tree.traverse();
+                        }
+                    }
+                    else {
+                        analyze_for_traversals(&mut analysis_tree, COMPUTER_TRAVERSALS_PER_FRAME);
+                    }
 
                     // then, when it is time, we let the computer make a move.
                     if computer_thinking_time > COMPUTER_THINK {
@@ -699,7 +722,13 @@ async fn main() {
                             board_state.apply_move_unchecked(&suggested_move);
 
                             // update the analysis tree
-                            //println!("Visits: {}. ", analysis_tree.root.visits);
+                            
+                            if LOCAL_RELEASE {
+                                println!("Visits: {}. ", analysis_tree.root.visits);
+                            }
+                            
+                            
+                            
                             //analysis_tree.see_analysis();
 
                             analysis_tree.make_given_move(ScoredMove{chess_move: suggested_move, score: 0.});
@@ -938,11 +967,15 @@ async fn main() {
 
                 // after having handled all the clicking, we let the computer do some thinking
                 
-                //let starting_time = get_time();
-                //while get_time() - starting_time < COMPUTER_TIME_FRIEND && analysis_tree.root.visits < MAX_VISITS {
-                //    analysis_tree.traverse();
-                //}
-                analyze_for_traversals(&mut analysis_tree, FRIEND_TRAVERSALS_PER_FRAME);
+                if LOCAL_RELEASE {
+                    let starting_time = get_time();
+                    while get_time() - starting_time < COMPUTER_TIME_FRIEND && analysis_tree.root.visits < MAX_VISITS {
+                        analysis_tree.traverse();
+                    }
+                }
+                else {
+                    analyze_for_traversals(&mut analysis_tree, FRIEND_TRAVERSALS_PER_FRAME);
+                }
                 
             },
         }

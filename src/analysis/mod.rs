@@ -22,7 +22,7 @@ const ROLLOUT_DEPTH: usize = 0;
 const UPDATE_DELAY: usize = 50;
 const BOOK_WEIGHT_EXPONENT: f64 = 1.25;
 const DEPTH_THRESHOLD: usize = 100;
-const PRIORITY_WEIGHT: f64 = 2.3;
+const PRIORITY_WEIGHT: f64 = 4.0;
 const C: f64 = 1.4;
 
 pub struct AnalysisTree {
