@@ -26,6 +26,29 @@ pub struct BoardState {
 
 // methods for making and getting legal moves on the board [FIXED]
 impl BoardState { 
+
+    // generates a new board on the starting position
+    pub fn new() -> Self {
+        let mut res = BoardState{
+            piece_arr: [None; 64], 
+            side_to_move: Side::White,
+            white_short_castle: true,
+            white_long_castle: true,
+            black_short_castle: true,
+            black_long_castle: true,
+            en_passant: None,
+            white_king: 60,
+            black_king: 4,
+            material: 0.,
+            total_pieces: 32,
+            half_moves: 0,
+            full_moves: 1,
+        };
+
+        res.to_starting_position();
+
+        return res;
+    }
  
     // Applies a move without checking for legality. 
     // The caller must guarantee that a move is indeed legal before calling

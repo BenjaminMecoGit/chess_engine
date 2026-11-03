@@ -70,9 +70,9 @@ const COMPUTER_TIME_ON_PLAYER: f64 = 15./1000.;
 const COMPUTER_TIME_ON_COMPUTER: f64 = 45./1000.;
 const MAX_VISITS: usize = 10_000_000;
 
-const FRIEND_TRAVERSALS_PER_FRAME: usize = 1000;
-const PLAYER_TRAVERSALS_PER_FRAME: usize = 1000;
-const COMPUTER_TRAVERSALS_PER_FRAME: usize = 3000;
+const FRIEND_TRAVERSALS_PER_FRAME: usize = 2000;
+const PLAYER_TRAVERSALS_PER_FRAME: usize = 2000;
+const COMPUTER_TRAVERSALS_PER_FRAME: usize = 4000;
 
 // how analysis works, different on web and locally:
 #[cfg(not(target_arch = "wasm32"))]
@@ -199,26 +199,12 @@ async fn main() {
     }
 
     // the initial board state
-    let mut board_state: BoardState = BoardState{piece_arr: [None; 64], 
-                                                 side_to_move: Side::White,
-                                                 white_short_castle: true,
-                                                 white_long_castle: true,
-                                                 black_short_castle: true,
-                                                 black_long_castle: true,
-                                                 en_passant: None,
-                                                 white_king: 60,
-                                                 black_king: 4,
-                                                 material: 0.,
-                                                 total_pieces: 32,
-                                                 half_moves: 0,
-                                                 full_moves: 1,
-                                                };
+    let mut board_state: BoardState = BoardState::new();
     
     /*
     board_state = kiwipete();
     */
 
-    board_state.to_starting_position();
     for i in 0..0 {
         println!("Number of legal moves at depth {}: {}", i, perft(&mut board_state, i))
     }
