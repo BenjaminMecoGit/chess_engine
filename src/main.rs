@@ -26,6 +26,7 @@ fn asset_path(relative_path: &str) -> PathBuf {
  
 mod chess;
 mod analysis;
+mod net;
 
 use crate::chess::{
     coordinates_to_move,
@@ -42,6 +43,10 @@ use crate::analysis::{
     AnalysisTree,
     Solved,
     mc_to_eval,
+};
+
+use crate::net::{
+    Network
 };
 
 // for appearence
@@ -224,6 +229,10 @@ async fn main() {
         },
         board_state_backup: board_state.clone(),
     };
+
+    // the initial neural net [FOR TESTING]
+    let mut net = Network::new(10,10).unwrap();
+    net.refresh(&board_state);
 
     // states for the computer game mode
     let mut player_side: Side = Side::White;
@@ -610,7 +619,29 @@ async fn main() {
 
                                 if board_state.is_legal_move(&suggested_move) {
 
-                                    board_state.apply_move_unchecked(&suggested_move);                               
+                                    if LOCAL_RELEASE {
+
+                                        // update the network state
+                                        net.refresh(&board_state);
+                                        net.update(&suggested_move, &board_state);
+                                        let net_evaluation = net.evaluate(&board_state.side_to_move.opposite());
+                                        print!("Neural net evaluation after efficient update: {}. ", net_evaluation);
+                                    }
+
+                                    let um = board_state.apply_move_unchecked(&suggested_move);
+
+                                    if LOCAL_RELEASE {
+
+                                        // check if un-moves work nicely
+                                        net.un_update(&um, &board_state);
+                                        let net_evaluation = net.evaluate(&board_state.side_to_move.opposite());
+                                        print!("the previous eval: {}, ", net_evaluation);
+
+                                        // compare to the calibrated network
+                                        net.refresh(&board_state);                            
+                                        let net_evaluation = net.evaluate(&board_state.side_to_move);
+                                        println!("and for reference: {}", net_evaluation);
+                                    }                          
 
                                     // update the analysis tree
                                     analysis_tree.make_given_move(ScoredMove{chess_move: suggested_move, score: 0.});
@@ -630,6 +661,7 @@ async fn main() {
 
                                     // set the checkpoint time for the computer
                                     computer_thinking_time = 0.;
+
                                 }
                                 else {
                                     // un-highlight all squares
@@ -668,8 +700,6 @@ async fn main() {
                     else {
                         analyze_for_traversals(&mut analysis_tree, FRIEND_TRAVERSALS_PER_FRAME);
                     }
-                    
-                    
                 }
                 else if board_state.side_to_move == player_side {
                     if LOCAL_RELEASE {
@@ -685,7 +715,6 @@ async fn main() {
                 else {
 
                     // if it is the computers turn, then we first let it do some thinking
-                    
                     if LOCAL_RELEASE {
                         let starting_time = get_time();
                         while get_time() - starting_time < COMPUTER_TIME_ON_COMPUTER && analysis_tree.root.visits < MAX_VISITS {
@@ -705,18 +734,40 @@ async fn main() {
                             let old_square = suggested_move.get_from();
                             let new_square = suggested_move.get_to();
 
-                            board_state.apply_move_unchecked(&suggested_move);
+                            // print the neural net evaluation and the custom engine evaluation 
+                            // when the computer makes a move [DEBUGGING AND TESTING]
+                            if LOCAL_RELEASE {
 
-                            // update the analysis tree
+                                // update the network state
+                                net.refresh(&board_state);
+                                net.update(&suggested_move, &board_state);
+                                let net_evaluation = net.evaluate(&board_state.side_to_move.opposite());
+                                print!("Neural net evaluation after efficient update: {}, ", net_evaluation);
+                        
+                            }
+
+                            let um = board_state.apply_move_unchecked(&suggested_move);
+
+                            if LOCAL_RELEASE {
+
+                                // check if un-moves work nicely
+                                net.un_update(&um, &board_state);
+                                let net_evaluation = net.evaluate(&board_state.side_to_move.opposite());
+                                print!("the previous eval: {}, ", net_evaluation);
+
+                                // compare to the calibrated network
+                                net.refresh(&board_state);                            
+                                let net_evaluation = net.evaluate(&board_state.side_to_move);
+                                println!("and for reference: {}", net_evaluation);
+                            }
                             
+                            // only show number of visists when running locally. 
+                            // This is for debugging purposes and for performance checks
                             if LOCAL_RELEASE {
                                 println!("Visits: {}. ", analysis_tree.root.visits);
                             }
                             
-                            
-                            
-                            //analysis_tree.see_analysis();
-
+                            // update the analysis tree
                             analysis_tree.make_given_move(ScoredMove{chess_move: suggested_move, score: 0.});
 
                             // un-highlight all squares

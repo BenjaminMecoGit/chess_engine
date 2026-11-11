@@ -30,12 +30,10 @@
 /// Note that in the input vector, we can have at most 32 possible pieces 
 /// We ignore things like castling and en passant. The turn is baked into the doubling of the input
 
-use rand::Rng;
+use macroquad::prelude::*;
 
 use crate::chess::{
-    coordinates_to_move,
     BoardState,
-    ScoredMove,
     Move,
     UnMove,
     Piece,
@@ -43,14 +41,7 @@ use crate::chess::{
     Side,
 };
 
-use crate::analysis::{
-    //AnalysisNode,
-    //AnalysisTree,
-    //Solved,
-    //mc_to_eval,
-};
-
-const ACCUMULATOR_SIZE: usize = 128;
+const ACCUMULATOR_SIZE: usize = 32;
 const INPUT_DIM: usize = 64 * 2 * 6;
 const INPUT_SIZE: usize = 64;
 
@@ -65,10 +56,17 @@ pub struct Network {
     pub output_weights: [i8; ACCUMULATOR_SIZE * 2],
     pub output_bias: i32,
     // data to compute with, these are indexed by perspective, 0 is white and 1 is black
-    pub inputs: [[Option<u16>; INPUT_SIZE];2],
+    pub inputs: [[Option<usize>; INPUT_SIZE];2],
     pub accumulator_values: [[i16; ACCUMULATOR_SIZE];2],
 }
 
+// functions related to the training of a network
+impl Network {
+    
+}
+
+
+// functions related to the handling of a finished network
 impl Network {
 
     // returns a new Network with randomly initialized weights in the specified ranges
@@ -77,8 +75,6 @@ impl Network {
         if acc_range > 127 ||out_range > 127 {
             return None;
         }
-
-        let mut rng = rand::thread_rng();
         
         let mut res = Network {
             input_weights: vec![[0i8; ACCUMULATOR_SIZE]; INPUT_DIM].into_boxed_slice(),
@@ -89,14 +85,17 @@ impl Network {
             accumulator_values: [[0; ACCUMULATOR_SIZE];2],
         };
 
+        // fixing the seed in macroquad
+        macroquad::rand::srand(0x5EED_1234);
+
         for i in 0..INPUT_DIM {
             for j in 0..ACCUMULATOR_SIZE {
-                res.input_weights[i][j] = rng.gen_range(-(acc_range as isize)..=(acc_range as isize)) as i8;
+                res.input_weights[i][j] = rand::gen_range(-(acc_range as isize), acc_range as isize) as i8;
             }
         }
 
         for k in 0..(2 * ACCUMULATOR_SIZE) {
-            res.output_weights[k] = rng.gen_range(-(out_range as isize)..=(out_range as isize)) as i8;
+            res.output_weights[k] = rand::gen_range(-(out_range as isize), out_range as isize) as i8;
         }
 
         return Some(res);
@@ -121,8 +120,8 @@ impl Network {
 
                 // record the index, 
                 // notice that means that the piece is of the color that is about to move
-                self.inputs[0][count] = Some((64 * piece_to_index(&piece, &Side::White) + sq) as u16); 
-                self.inputs[1][count] = Some((64 * piece_to_index(&piece, &Side::Black) + (sq ^ 56)) as u16);
+                self.inputs[0][count] = Some(data_to_index(&piece, sq as i8, &Side::White)); 
+                self.inputs[1][count] = Some(data_to_index(&piece, sq as i8, &Side::Black));
 
                 count += 1;
  
@@ -130,6 +129,12 @@ impl Network {
         }
 
         // accumulate the values
+        self.accumulate();
+
+    }
+
+    pub fn accumulate(&mut self) {
+        
         for i in 0..ACCUMULATOR_SIZE {
             
             let mut res_0: i16 = self.input_bias[i];
@@ -149,8 +154,7 @@ impl Network {
             self.accumulator_values[1][i] = res_1;
 
         }
-
-    }
+    } 
 
     // evaluates the network from the accumulated values
     pub fn evaluate(&self, side_to_move: &Side) -> i32 {
@@ -172,49 +176,277 @@ impl Network {
 
     // efficiently updates the network, 
     // given a move and on what board that move is to be made
-    pub fn update(&mut self, m: Move, board: BoardState) {
+    // this function assumes that it will be used before the move is applied to the board
+    pub fn update(&mut self, m: &Move, board: &BoardState) {
         
+        match *m {
+            Move::Standard(from, to) => {
+
+                // First find the moving piece
+                let moving_piece = board.piece_arr[from as usize];
+
+                // place the moving piece in both perspectives
+                self.update_helper(to, &moving_piece, &Side::White);
+                self.update_helper(to, &moving_piece, &Side::Black);
+
+                // remove the old piece
+                self.update_helper(from, &None, &Side::White);
+                self.update_helper(from, &None, &Side::Black);
+            },
+            Move::Castle(from, to) => {
+                // First find the moving king
+                let moving_king = board.piece_arr[from as usize];
+                // place the moving piece in both perspectives
+                self.update_helper(to, &moving_king, &Side::White);
+                self.update_helper(to, &moving_king, &Side::Black);
+                // remove the old king
+                self.update_helper(from, &None, &Side::White);
+                self.update_helper(from, &None, &Side::Black);
+
+                // Find the moving rook
+                let rook_from = match to {
+                    2 => 0,
+                    6 => 7,
+                    58 => 56, 
+                    _ => 63,
+                };
+
+                if let Some(moving_rook) = board.piece_arr[rook_from as usize] {
+
+                    let rook_to = match to {
+                        2 => 3,
+                        6 => 5,
+                        58 => 59, 
+                        _ => 61,
+                    };
+
+                    // move the rook in both perspectives
+                    self.update_helper(rook_to, &Some(moving_rook), &Side::White);
+                    self.update_helper(rook_to, &Some(moving_rook), &Side::Black);
+                    // remove the old rook
+                    self.update_helper(rook_from, &None, &Side::White);
+                    self.update_helper(rook_from, &None, &Side::Black);
+                }
+            },
+            Move::EnPassant(from, to) => {
+                // First find the moving pawn
+                let moving_pawn = board.piece_arr[from as usize];
+
+                // place the moving pawn in both perspectives
+                self.update_helper(to, &moving_pawn, &Side::White);
+                self.update_helper(to, &moving_pawn, &Side::Black);
+
+                // remove the moving pawn in both perspectives
+                self.update_helper(from, &None, &Side::White);
+                self.update_helper(from, &None, &Side::Black);
+
+                // find the square of the pawn to be removed
+                let removal_square = match moving_pawn.unwrap().side {
+                    Side::White => to + 8,
+                    Side::Black => to - 8,
+                };
+                
+                // remove the captured pawn from both perspectives
+                self.update_helper(removal_square, &None, &Side::White);
+                self.update_helper(removal_square, &None, &Side::Black);
+
+            },
+            Move::Promotion(from, to,kind) => {
+
+                // create a piece that will be placed as a promotion
+                let pawn = board.piece_arr[from as usize].unwrap();
+                let promotion = Piece{side: pawn.side, kind: kind};
+                
+                // remove the pawn standing on "from"
+                self.update_helper(from, &None, &Side::White);
+                self.update_helper(from, &None, &Side::Black);
+
+                // add the promotion
+                self.update_helper(to, &Some(promotion), &Side::White);
+                self.update_helper(to, &Some(promotion), &Side::Black);
+            },
+        }
+
     }
 
-    // efficiently updates the network, given an unmove
-    pub fn un_update(&mut self, um: UnMove) {
-        // TO BE IMPLEMENTED
+    // efficiently updates the network, given an unmove and the board state
+    // this function assumes that it will be used before the unmove is applied to the board
+    pub fn un_update(&mut self, um: &UnMove, board: &BoardState) {
+        
+        // first unmake the movement of the moving piece
+        match um.movement {
+            Move::Standard(from, to) => {
+                // First find the moving piece
+                let moving_piece = board.piece_arr[to as usize];
+
+                // place the moving piece in both perspectives
+                self.update_helper(from, &moving_piece, &Side::White);
+                self.update_helper(from, &moving_piece, &Side::Black);
+
+                // fix the square that the piece had moved to
+                self.update_helper(to, &um.capture, &Side::White);
+                self.update_helper(to, &um.capture, &Side::Black);
+            },
+            Move::Castle(from, to) => {
+                // First finds the moving king
+                let moving_king = board.piece_arr[to as usize];
+                // place the moving piece in both perspectives
+                self.update_helper(from, &moving_king, &Side::White);
+                self.update_helper(from, &moving_king, &Side::Black);
+                // remove the old king
+                self.update_helper(to, &None, &Side::White);
+                self.update_helper(to, &None, &Side::Black);
+
+                // Find the moving rook
+                let rook_to = match to {
+                        2 => 3,
+                        6 => 5,
+                        58 => 59, 
+                        _ => 61,
+                    };
+
+                if let Some(moving_rook) = board.piece_arr[rook_to as usize] {
+
+                    let rook_from = match to {
+                        2 => 0,
+                        6 => 7,
+                        58 => 56, 
+                        _ => 63,
+                    };
+
+                    // move the rook in both perspectives
+                    self.update_helper(rook_from, &Some(moving_rook), &Side::White);
+                    self.update_helper(rook_from, &Some(moving_rook), &Side::Black);
+                    // remove the old rook
+                    self.update_helper(rook_to, &None, &Side::White);
+                    self.update_helper(rook_to, &None, &Side::Black);
+                }
+            },
+            Move::EnPassant(from, to) => {
+                // First find the moving pawn
+                let moving_pawn = board.piece_arr[to as usize];
+
+                // place the moving pawn in both perspectives
+                self.update_helper(from, &moving_pawn, &Side::White);
+                self.update_helper(from, &moving_pawn, &Side::Black);
+
+                // remove the moving pawn in both perspectives
+                self.update_helper(to, &None, &Side::White);
+                self.update_helper(to, &None, &Side::Black);
+
+                // find the square of the pawn to be placed back
+                let removal_square = match moving_pawn.unwrap().side {
+                    Side::White => to + 8,
+                    Side::Black => to - 8,
+                };
+                let pawn = Piece{side:moving_pawn.unwrap().side.opposite(), kind: PieceKind::Pawn};
+                
+                // add the captured pawn from both perspectives
+                self.update_helper(removal_square, &Some(pawn), &Side::White);
+                self.update_helper(removal_square, &Some(pawn), &Side::Black);
+            },
+            Move::Promotion(from, to, _) => {
+                // create a pawn that was the promoted one
+                let pawn = Piece{side: board.side_to_move.opposite(), kind: PieceKind::Pawn};
+                
+                // remove the piece standing on "to"
+                self.update_helper(to, &um.capture, &Side::White);
+                self.update_helper(to, &um.capture, &Side::Black);
+
+                // add the old pawn back
+                self.update_helper(from, &Some(pawn), &Side::White);
+                self.update_helper(from, &Some(pawn), &Side::Black);
+            },
+        }
+
+
     }
 
-    // updates the network according to three parameters:
-    // a pieve moving from "from", to "to"
-    pub fn update_helper(
+    // updates the network by just changing one input 
+    // makes sure that there is a square (from whites perspective) with a certain Piece on it
+    fn update_helper(
         &mut self, 
-        moving_piece: (usize, usize, Piece),  
-        remove_piece: Option<(Piece,usize)>, 
-        add_piece: Option<(Piece, usize)>,
+        square: i8,  
+        piece: &Option<Piece>,
+        side: &Side,
     ) {
-        // first make sure to move the moving piece
-        let moving_side = &moving_piece.2.side;
-
-        let potential_index = 
-        self.inputs[side_to_index(&moving_side)]
-            .iter_mut()
-            .find(|x| {
-                if let Some(index) = x {
-                    *index == moving_piece.0 as u16
-                }
-                else {
-                    false
-                }
-            });
-        
-        let potential_index = if potential_index.is_some() {
-                *potential_index.unwrap()
+        // calculate the index that should be activated or deactivated
+        let index = 
+            if let Some(piece) = piece {
+                Some(data_to_index(&piece, square, &side))
             }
             else {
                 None
             };
         
-        
+        let mut buffer: Option<usize> = None;
+        let mut square_found = false;
+        let s = side_to_index(side);
+        let sq = match *side {
+            Side::White => square,
+            Side::Black => square ^ 56,
+        };
+
+        for i in 0..INPUT_SIZE {
+
+            // save the buffer when the first empty is found
+            if buffer.is_none() && self.inputs[s][i].is_none() {
+                buffer = Some(i);
+            }
+
+            // if the correct square is encountered, then we need to update
+            if let Some(ind) = self.inputs[s][i] && sq == index_to_square(ind) {
+                if square_found {
+                    // this is for cleaning, only happens if we have seen this square before
+                    self.inputs[s][i] = None;
+                }
+                else {
+                    
+                    // ensure that the inputs remember this index
+                    self.inputs[s][i] = index;
+
+                    // remove the influence of the removed piece
+                    for j in 0..ACCUMULATOR_SIZE {
+                        self.accumulator_values[s][j] -= self.input_weights[ind][j] as i16;
+                    }
+
+                    // add the influence of the placed piece
+                    if let Some(k) = index {
+                        for j in 0..ACCUMULATOR_SIZE {
+                            self.accumulator_values[s][j] += self.input_weights[k][j] as i16;
+                        }
+                    }
+
+                    // record that the square has been updated
+                    square_found = true;
+                }   
+            }
+        }
+
+        // if the square is not found and there was an empty buffer, 
+        // then just record at the buffer
+        if !square_found && let Some(k) = buffer {
+            self.inputs[s][k] = index;
+
+            // add the influence of the placed piece
+            if let Some(k) = index {
+                for j in 0..ACCUMULATOR_SIZE {
+                    self.accumulator_values[s][j] += self.input_weights[k][j] as i16;
+                }
+            }
+        }
 
     }
 
+}
+
+// helping function that returns the index for a given piece on a given square, from a given perspective
+fn data_to_index(piece: &Piece, square: i8, perspective: &Side) -> usize {
+    let sq = match *perspective {
+        Side::White => square,
+        Side::Black => square ^ 56, 
+    } as usize;
+   (64 * piece_to_index(piece, perspective) + sq) as usize
 }
 
 // helping function that returns the index for a given piece (no information about the square)
@@ -240,4 +472,9 @@ fn side_to_index(side: &Side) -> usize {
         Side::White => 0,
         Side::Black => 1,    
     }
+}
+
+// finds the square given the occupied index
+fn index_to_square(index: usize) -> i8 {
+    (index % 64) as i8
 }
